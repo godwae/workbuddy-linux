@@ -29,7 +29,7 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
 
 <div align="center">
 
-### **📦 项目归档公告**：本项目已进入归档状态，详情请参阅 [Discussions #4](https://github.com/JipZeonGit/workbuddy-linux/discussions/4)。
+### **📌 继续维护说明**：原项目 [JipZeonGit/workbuddy-linux](https://github.com/JipZeonGit/workbuddy-linux) 已进入归档（只读）状态。本仓库 [godwae/workbuddy-linux](https://github.com/godwae/workbuddy-linux) 为其社区继续维护版，遵循原项目 MIT 许可证并保留原作者署名，更新与问题请在本仓库提交。
 
 </div>
 
