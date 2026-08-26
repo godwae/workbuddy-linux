@@ -68,7 +68,7 @@ make install
 
 `scripts/install-deps.sh` 会自动识别当前系统的包管理器（支持 `apt`、`dnf5`、`dnf`、`pacman`、`zypper`），一键安装 DMG 提取、Electron 运行时下载、原生模块重建、安装包生成所需的全部依赖。
 
-> 测试范围：已在 Debian 系（Linux Mint 22.3）和 Arch 系（CachyOS）完成完整打包部署实测，运行稳定（基于官方 5.3.14 版本验证通过）。
+> 测试范围：已在 Debian 系（Linux Mint 22.3）、Arch 系（CachyOS）与 Fedora 系（Fedora 44 KDE）完成完整打包部署实测，运行稳定（基于官方 5.3.14 版本验证通过）。
 
 ## 构建与运行
 
