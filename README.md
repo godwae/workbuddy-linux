@@ -15,7 +15,7 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
   <img src="https://img.shields.io/badge/arch-ArchLinux_%7C_CachyOS_%7C_Manjaro-1793D1?style=flat&logo=arch-linux&logoColor=white" alt="AUR Package">
   <img src="https://img.shields.io/badge/rpm-Fedora_%7C_RHEL-006699?style=flat&logo=fedora&logoColor=white" alt="Fedora RHEL Support">
   <br>
-  <img src="https://img.shields.io/badge/版本适配-4.22.10-0052D9?style=flat&logo=probot&logoColor=white" alt="Supported Version">
+  <img src="https://img.shields.io/badge/版本适配-5.3.14-0052D9?style=flat&logo=probot&logoColor=white" alt="Supported Version">
   <img src="https://img.shields.io/badge/Electron-41.1.1-47307B?style=flat&logo=electron&logoColor=white" alt="Electron Version">
   <img src="https://img.shields.io/badge/状态-Unofficial-d73a49?style=flat" alt="Status Unofficial">
 </p>
@@ -68,7 +68,7 @@ make install
 
 `scripts/install-deps.sh` 会自动识别当前系统的包管理器（支持 `apt`、`dnf5`、`dnf`、`pacman`、`zypper`），一键安装 DMG 提取、Electron 运行时下载、原生模块重建、安装包生成所需的全部依赖。
 
-> 测试范围：已在 Debian 系（Linux Mint 22.3）和 Arch 系（CachyOS）完成完整打包部署实测，运行稳定。
+> 测试范围：已在 Debian 系（Linux Mint 22.3）和 Arch 系（CachyOS）完成完整打包部署实测，运行稳定（基于官方 5.3.14 版本验证通过）。
 
 ## 构建与运行
 
