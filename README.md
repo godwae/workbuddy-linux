@@ -111,6 +111,22 @@ make install
 make clean
 ```
 
+### 检查上游更新（免登录）
+
+移植版禁用了应用内"检查更新"，但可通过以下命令查询官方是否发布了新版本：
+
+```bash
+make check-update
+```
+
+脚本直接调用 WorkBuddy 公开的升级查询接口（`https://copilot.tencent.com/v2/update`，无需登录），将官方最新发布版本与本地 `build-info.json` 中记录的 `upstreamVersion` 对比。由于官方未发布 Linux 构建，该命令跟踪的是**官方 macOS（Intel x64）DMG 发布通道**——即本移植版所基于的上游来源；ARM 机型可改用：
+
+```bash
+WORKBUDDY_UPDATE_PLATFORM=workbuddy-darwin-arm64 make check-update
+```
+
+检测到新版本时会给出下载地址、SHA256 与升级路径（`make build-app && make package && make install`）。退出码：`0`=已是最新，`1`=有更新，`2`=查询失败。
+
 ## 项目状态
 
 目前项目已完整实现 Linux 端的转换与打包核心流程，具体功能如下：
@@ -125,7 +141,7 @@ make clean
 - 自动生成 Linux 系统启动器与桌面入口文件；
 - 根据当前 Linux 发行版，一键生成适配的 `.deb`、`.rpm` 或 `.pkg.tar.zst` 格式安装包。
 
-> 项目**未集成自动更新功能**，如需更新软件，只需手动下载新版官方 DMG，放入 `downloads/` 目录后，重新执行构建、安装流程即可覆盖本地旧版本。
+> 项目**未集成自动更新功能**，如需更新软件，只需手动下载新版官方 DMG，放入 `downloads/` 目录后，重新执行构建、安装流程即可覆盖本地旧版本。可先执行 `make check-update` 免登录查询官方是否已发布新版本。
 
 ## 实现原理
 

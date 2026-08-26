@@ -196,7 +196,7 @@ exec "\$APP_DIR/electron" \\
   --disable-dev-shm-usage \\
   --disable-gpu-sandbox \\
   --in-process-gpu \\
-  --ozone-platform-hint=auto \\
+  --ozone-platform-hint="\${ELECTRON_OZONE_PLATFORM_HINT:-x11}" \\
   --enable-wayland-ime \\
   "\$@"
 EOF

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help deps build-app run-app deb rpm pacman package install clean check
+.PHONY: help deps build-app run-app deb rpm pacman package install check-update clean check
 
 help:
 	@echo "Targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make pacman"
 	@echo "  make package"
 	@echo "  make install"
+	@echo "  make check-update"
 	@echo "  make check"
 	@echo "  make clean"
 
@@ -39,6 +40,9 @@ package:
 
 install:
 	bash scripts/install-package.sh
+
+check-update:
+	bash scripts/check-upstream-version.sh
 
 check:
 	bash -n install.sh scripts/*.sh scripts/lib/*.sh
