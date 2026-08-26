@@ -67,6 +67,12 @@ EOF
     fi
 
     cat > "$SPEC_FILE" <<EOF
+# Exclude bundled multi-platform binaries from automatic dependency scanning.
+# The app ships Electron runtimes for armhf, loongarch, riscv64, FreeBSD, and
+# musl — their library deps are not resolvable on a standard Linux system.
+# System-level dependencies are listed explicitly in Requires: below.
+%global __requires_exclude_from ^/opt/$PACKAGE_NAME/.*$
+
 Name: $PACKAGE_NAME
 Version: $RPM_VERSION
 Release: 1%{?dist}
