@@ -16,7 +16,7 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
   <img src="https://img.shields.io/badge/rpm-Fedora_%7C_RHEL-006699?style=flat&logo=fedora&logoColor=white" alt="Fedora RHEL Support">
   <br>
   <img src="https://img.shields.io/badge/版本适配-5.3.14-0052D9?style=flat&logo=probot&logoColor=white" alt="Supported Version">
-  <img src="https://img.shields.io/badge/Electron-41.1.1-47307B?style=flat&logo=electron&logoColor=white" alt="Electron Version">
+  <img src="https://img.shields.io/badge/Electron-37.10.3-47307B?style=flat&logo=electron&logoColor=white" alt="Electron Version">
   <img src="https://img.shields.io/badge/状态-Unofficial-d73a49?style=flat" alt="Status Unofficial">
 </p>
 
@@ -48,7 +48,9 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
 
 ## 版本适配说明
 
-当前补丁基于官方 WorkBuddy **4.22.10**（构建号 `27634624-ec5e02bd`）验证通过。更高版本的 DMG 可能因为上游代码结构变化导致补丁无法正确应用。如遇到构建失败或运行异常，请在本仓库提 Issue 并附上所使用的 DMG 版本号。
+当前补丁基于官方 WorkBuddy **5.3.14** 验证通过，配套 Electron 运行时为 **37.10.3**（由 `install.sh` 从 DMG 内 `Electron Framework` 的 Info.plist 自动探测，无需手工指定）。
+
+更高版本的 DMG 可能因为上游代码结构变化导致补丁锚点失效——这已经发生过一次：WorkBuddy 5.3.x 将主进程改为 esbuild 打包后，原有的窗口控制与更新相关补丁锚点全部失配。为此补丁脚本现在会逐条报告 `applied / skipped / n-a / failed` 并在结尾汇总，构建完成后请执行 `make verify-patches` 确认各补丁均已生效；置 `WB_PATCH_STRICT=1` 可让任何失配直接中止构建。
 
 ## 快速安装
 
@@ -96,12 +98,14 @@ make run-app
 
 ### 打包并安装
 
-自动生成适配当前发行版的安装包，并完成本地安装：
+`make package` 按 `/etc/os-release` 识别当前发行版的原生包格式并生成对应安装包（Debian 系产出 `.deb`、RH/openSUSE 系产出 `.rpm`、Arch 系产出 `.pkg.tar.zst`），随后完成本地安装：
 
 ```bash
 make package
 make install
 ```
+
+如需显式指定格式（或当前发行版检测不符合预期），可分别使用 `make deb`、`make rpm`、`make pacman`，或以 `PACKAGE_FORMAT=rpm make package` 覆盖。
 
 ### 清理构建产物
 
@@ -175,6 +179,7 @@ WorkBuddy 基于 VS Code/Electron 开发，其 macOS 应用的 `app.asar` 文件
 3. **托盘图标显示为感叹号**：上游把图片 resize 成内存 NativeImage 传给 Tray，AppIndicator 无法正确渲染。**修复方式**：Linux 下直接用磁盘上的 `.workbuddy-linux/workbuddy.png` 路径构造 Tray。
 4. **Sidecar 子进程 spawn 失败（E2BIG）**：`buildCliEnv()` 显式把 260KB 字符串塞进 spawn 的 env 对象。**修复方式**：Monkey-patch `child_process.spawn/spawnSync`，超过 100KB 的 env 条目自动 spill 到临时文件，子进程启动时从文件读回并通过 Proxy 恢复。
 5. **`@lydell/node-pty-linux-x64` 找不到**：原 macOS asar 里只有 darwin 平台包。**修复方式**：repack 时将 Linux 平台包注入 asar 并标记为 unpacked。
+6. **Linux 无边框窗口没有最小化/最大化/关闭按钮**：上游在 Linux 下设置 `frame: false` 且不提供 titleBarOverlay（该特性仅 Wayland 有效）。**修复方式**：在渲染进程注入右上角窗口控制按钮，经 `workbuddyDesktop.window.getCurrentWindow()` 调用主进程窗口控制通道（该对象是 preload 实际暴露的 API，并非 `buddyAPI`）。
 
 ## 常用自定义配置
 
@@ -236,7 +241,9 @@ ELECTRON_HEADERS_URL=https://artifacts.electronjs.org/headers/dist bash install.
 
 ## 版本適配說明
 
-當前補丁基於官方 WorkBuddy **4.22.10**（構建號 `27634624-ec5e02bd`）驗證通過。更高版本的 DMG 可能因為上游程式碼結構變化導致補丁無法正確套用。如遇到構建失敗或運行異常，請在本倉庫提 Issue 並附上所使用的 DMG 版本號。
+當前補丁基於官方 WorkBuddy **5.3.14** 驗證通過，配套 Electron 運行時為 **37.10.3**（由 `install.sh` 從 DMG 內 `Electron Framework` 的 Info.plist 自動探測，無須手動指定）。
+
+更高版本的 DMG 可能因為上游程式碼結構變化導致補丁錨點失效——這已經發生過一次：WorkBuddy 5.3.x 將主行程改為 esbuild 打包後，原有的視窗控制與更新相關補丁錨點全部失配。為此補丁腳本現在會逐條回報 `applied / skipped / n-a / failed` 並在結尾彙總，建置完成後請執行 `make verify-patches` 確認各補丁均已生效；設定 `WB_PATCH_STRICT=1` 可讓任何失配直接中止建置。
 
 ## 快速安裝
 
@@ -284,12 +291,14 @@ make run-app
 
 ### 打包並安裝
 
-自動產生適配當前發行版的安裝包，並完成本機安裝：
+`make package` 依 `/etc/os-release` 識別當前發行版的原生套件格式並產生對應安裝包（Debian 系產出 `.deb`、RH/openSUSE 系產出 `.rpm`、Arch 系產出 `.pkg.tar.zst`），隨後完成本機安裝：
 
 ```bash
 make package
 make install
 ```
+
+如需顯式指定格式（或當前發行版偵測不符合預期），可分別使用 `make deb`、`make rpm`、`make pacman`，或以 `PACKAGE_FORMAT=rpm make package` 覆蓋。
 
 ### 清理構建產物
 
@@ -347,6 +356,7 @@ WorkBuddy 基於 VS Code/Electron 開發，其 macOS 應用程式的 `app.asar` 
 3. **系統匣圖示顯示為驚嘆號**：上游把圖片 resize 成記憶體 NativeImage 傳給 Tray，AppIndicator 無法正確渲染。**修復方式**：Linux 下直接用磁碟上的 `.workbuddy-linux/workbuddy.png` 路徑構造 Tray。
 4. **Sidecar 子程序 spawn 失敗（E2BIG）**：`buildCliEnv()` 顯式把 260KB 字串塞進 spawn 的 env 物件。**修復方式**：Monkey-patch `child_process.spawn/spawnSync`，超過 100KB 的 env 條目自動 spill 到臨時檔案，子程序啟動時從檔案讀回並透過 Proxy 恢復。
 5. **`@lydell/node-pty-linux-x64` 找不到**：原 macOS asar 裡只有 darwin 平台套件。**修復方式**：repack 時將 Linux 平台套件注入 asar 並標記為 unpacked。
+6. **Linux 無邊框視窗沒有最小化/最大化/關閉按鈕**：上游在 Linux 下設定 `frame: false` 且不提供 titleBarOverlay（該特性僅 Wayland 有效）。**修復方式**：在渲染程序注入右上角視窗控制按鈕，經 `workbuddyDesktop.window.getCurrentWindow()` 呼叫主程序視窗控制通道（該物件是 preload 實際暴露的 API，並非 `buddyAPI`）。
 
 ## 常用自訂設定
 
@@ -408,7 +418,9 @@ If you encounter any bugs, please submit an Issue in this repository. Do not dir
 
 ## Version Compatibility
 
-The current patches have been verified against official WorkBuddy **4.22.10** (build `27634624-ec5e02bd`). Higher versions of the DMG may have upstream code structure changes that prevent patches from applying correctly. If you encounter build failures or runtime issues, please file an Issue in this repository with the DMG version number you are using.
+The current patches have been verified against official WorkBuddy **5.3.14**, with the **37.10.3** Electron runtime (auto-detected by `install.sh` from the `Electron Framework` Info.plist inside the DMG, so there is nothing to hardcode).
+
+A newer DMG may shift the upstream code structure enough to break a patch anchor — this has already happened once: after WorkBuddy 5.3.x moved the main process to an esbuild bundle, the window-control and updater anchors all drifted. The patcher now reports `applied / skipped / n-a / failed` per patch and prints a summary, so run `make verify-patches` after building to confirm everything landed. Set `WB_PATCH_STRICT=1` to abort the build on any drift.
 
 ## Quick Install
 
@@ -456,12 +468,14 @@ make run-app
 
 ### Package & Install
 
-Generate a distribution-compatible package and install it locally:
+`make package` detects the distro's native package family from `/etc/os-release` and builds the matching artifact (`.deb` on Debian-family, `.rpm` on RH/openSUSE-family, `.pkg.tar.zst` on Arch-family), then installs it locally:
 
 ```bash
 make package
 make install
 ```
+
+To pick a format explicitly (or if detection does not match your distro), use `make deb`, `make rpm`, or `make pacman` directly, or override with `PACKAGE_FORMAT=rpm make package`.
 
 ### Clean Build Artifacts
 
@@ -519,6 +533,7 @@ The following issues have been resolved via Linux runtime patches (`scripts/lib/
 3. **Tray icon shows as exclamation mark**: Upstream passes a resized in-memory NativeImage to Tray, which AppIndicator cannot render. **Fix**: On Linux, construct the Tray from the on-disk `.workbuddy-linux/workbuddy.png` path.
 4. **Sidecar subprocess spawn fails (E2BIG)**: `buildCliEnv()` explicitly puts the 260KB string into the spawn env object. **Fix**: Monkey-patch `child_process.spawn/spawnSync` to spill env entries >100KB to temp files; child processes restore the value from file on startup.
 5. **`@lydell/node-pty-linux-x64` not found**: The original macOS asar only contains darwin platform packages. **Fix**: Inject the Linux platform package into the asar during repack and mark it as unpacked.
+6. **Frameless Linux window lacks minimize/maximize/close buttons**: Upstream sets `frame: false` on Linux without a titleBarOverlay (only effective on Wayland). **Fix**: Inject window control buttons into the renderer, wired through `workbuddyDesktop.window.getCurrentWindow()` to the main-process window-control channels (that object is the API actually exposed by the preload — not `buddyAPI`).
 
 ## Useful Custom Configurations
 

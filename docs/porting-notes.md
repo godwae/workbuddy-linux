@@ -24,8 +24,8 @@
 
 - 应用显示名：`WorkBuddy`；
 - bundle id：`com.workbuddy.workbuddy`；
-- Electron：`41.1.1`（CodeBuddy 为 `34.5.1`）；
-- 应用版本：`4.22.10`；
+- Electron：`37.10.3`（CodeBuddy 为 `34.5.1`；由 `install.sh` 从 DMG 内 `Electron Framework` 的 Info.plist 自动探测）；
+- 应用版本：`5.3.14`；
 - **载荷形式**：`app.asar` + `app.asar.unpacked`（CodeBuddy 用 `app` 目录）；
 - URL scheme：`workbuddy`、`codebuddy`；
 - 图标文件：`icon.icns`（CodeBuddy 为 `CodeBuddy CN.icns`）；
@@ -126,8 +126,8 @@ The inspected WorkBuddy macOS bundle uses:
 
 - app display name: `WorkBuddy`;
 - bundle id: `com.workbuddy.workbuddy`;
-- Electron: `41.1.1` (CodeBuddy uses `34.5.1`);
-- app version: `4.22.10`;
+- Electron: `37.10.3` (CodeBuddy uses `34.5.1`; auto-detected by `install.sh` from the `Electron Framework` Info.plist in the DMG);
+- app version: `5.3.14`;
 - **payload format**: `app.asar` + `app.asar.unpacked` (CodeBuddy uses a plain `app` directory);
 - URL scheme: `workbuddy`, `codebuddy`;
 - icon file: `icon.icns` (CodeBuddy uses `CodeBuddy CN.icns`);

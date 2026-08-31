@@ -30,6 +30,33 @@
 #   <install-dir>/.workbuddy-linux/workbuddy.png (written by install.sh
 #   and shipped inside the generated .deb/.rpm/.pkg.tar.zst under
 #   /opt/<app>/.workbuddy-linux/).
+#
+# Fix 4 — "Check for Updates..." entry and updater RPCs:
+#   The upstream updater drives the macOS ShipIt / Windows Squirrel
+#   installers, neither of which applies on a Linux port. The update menu
+#   entry is greyed out (only when upstream still ships one — WorkBuddy
+#   5.3.x removed it entirely), the update* RPCs are stubbed, and
+#   UpdateServiceLinux.checkForUpdates is short-circuited so the periodic
+#   background check never hits the update feed.
+#
+# Fix 5 — window control buttons (minimize/maximize/close):
+#   Upstream sets frame: false on Linux without a titleBarOverlay, which
+#   Electron only honours on Wayland, not X11. We draw our own buttons in
+#   the renderer and wire them to
+#   workbuddyDesktop.window.getCurrentWindow() — note the renderer API is
+#   NOT `buddyAPI`; that object only carries telemetry and auth helpers.
+#
+# Anchoring:
+#   Every patch is anchored on upstream source text, so a bundler upgrade
+#   can silently disable one — exactly what happened when WorkBuddy 5.3.x
+#   moved the main bundle to esbuild. Each patch now reports
+#   applied / skipped / n-a / failed, and the run ends with a summary.
+#   Set WB_PATCH_STRICT=1 to make any failure abort the build.
+#
+# Idempotence:
+#   Each patch carries its own marker, so re-running the patcher (or
+#   upgrading an older build) applies only what is still missing, instead
+#   of skipping everything because the env shim is already present.
 
 LINUX_PATCHES_SHIM_MARKER="__WB_LINUX_PATCHES_V5__"
 

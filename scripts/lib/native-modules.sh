@@ -99,6 +99,50 @@ purge_all_non_linux_artifacts() {
 }
 
 # ---------------------------------------------------------------------------
+# Shared: strip every non-Linux artifact under a directory.
+#
+# Used in two places:
+#   * Phase 2, for the whole app payload;
+#   * Phase 3, immediately after copying a freshly built module back in.
+#
+# The Phase 3 call matters: `npm install <module>` fetches the published
+# tarball, which ships prebuilds for every platform. Copying that tree
+# back verbatim reintroduces exactly the darwin/win32 binaries Phase 1
+# just deleted, which is how node-pty ended up carrying ~30MB of Mach-O
+# and PE payloads into the final package.
+# ---------------------------------------------------------------------------
+FOREIGN_BINARIES_REMOVED=0
+
+purge_foreign_binaries_in() {
+    local scan_dir="$1"
+    local native_file description
+
+    [ -d "$scan_dir" ] || return 0
+
+    # Non-Linux prebuild trees shipped inside npm tarballs.
+    find "$scan_dir" -type d \( -name "darwin-*" -o -name "win32-*" \) \
+        -path "*/prebuilds/*" -prune -exec rm -rf {} + 2>/dev/null || true
+
+    command -v file >/dev/null 2>&1 || return 0
+
+    while IFS= read -r native_file; do
+        description="$(file "$native_file" 2>/dev/null || true)"
+        case "$description" in
+            *Mach-O*)
+                warn "  Removing Mach-O binary: $native_file"
+                rm -f "$native_file"
+                FOREIGN_BINARIES_REMOVED=$((FOREIGN_BINARIES_REMOVED + 1))
+                ;;
+            *"PE32"*|*"PE32+"*|*"MS Windows"*)
+                warn "  Removing Windows PE binary: $native_file"
+                rm -f "$native_file"
+                FOREIGN_BINARIES_REMOVED=$((FOREIGN_BINARIES_REMOVED + 1))
+                ;;
+        esac
+    done < <(find "$scan_dir" \( -name "*.node" -o -name "*.dylib" -o -name "*.so" -o -name "*.dll" \) -type f 2>/dev/null | sort || true)
+}
+
+# ---------------------------------------------------------------------------
 # Phase 2: Deep scan and remove any remaining Mach-O / PE binaries
 # ---------------------------------------------------------------------------
 purge_remaining_foreign_binaries() {
@@ -109,27 +153,15 @@ purge_remaining_foreign_binaries() {
 
     command -v file >/dev/null 2>&1 || {
         warn "  'file' command not available; skipping deep binary scan"
+        purge_foreign_binaries_in "$app_dir"
         return 0
     }
 
-    local removed=0
-    while IFS= read -r native_file; do
-        description="$(file "$native_file" 2>/dev/null || true)"
-        case "$description" in
-            *Mach-O*)
-                warn "  Removing Mach-O binary: $native_file"
-                rm -f "$native_file"
-                ((removed++)) || true
-                ;;
-            *"PE32"*|*"PE32+"*|*"MS Windows"*)
-                warn "  Removing Windows PE binary: $native_file"
-                rm -f "$native_file"
-                ((removed++)) || true
-                ;;
-        esac
-    done < <(find "$app_dir" \( -name "*.node" -o -name "*.dylib" -o -name "*.so" -o -name "*.dll" \) -type f 2>/dev/null | sort || true)
+    local before after
+    before="$FOREIGN_BINARIES_REMOVED"
+    purge_foreign_binaries_in "$app_dir"
 
-    # Also check executables without extensions
+    # Executables without an extension (e.g. cli/vendor/sandbox/sandbox-cli)
     while IFS= read -r native_file; do
         [ -x "$native_file" ] || continue
         description="$(file "$native_file" 2>/dev/null || true)"
@@ -137,13 +169,14 @@ purge_remaining_foreign_binaries() {
             *Mach-O*)
                 warn "  Removing Mach-O executable: $native_file"
                 rm -f "$native_file"
-                ((removed++)) || true
+                FOREIGN_BINARIES_REMOVED=$((FOREIGN_BINARIES_REMOVED + 1))
                 ;;
         esac
     done < <(find "$app_dir/cli/vendor" -type f 2>/dev/null | sort || true)
 
-    if [ "$removed" -gt 0 ]; then
-        info "  Removed $removed remaining non-Linux binaries"
+    after="$FOREIGN_BINARIES_REMOVED"
+    if [ "$after" -gt "$before" ]; then
+        info "  Removed $((after - before)) remaining non-Linux binaries"
     else
         info "  No remaining non-Linux binaries found (clean)"
     fi
@@ -210,12 +243,23 @@ build_native_module_fresh() {
         error "No .node files produced for $module_name@$module_version"
     fi
 
-    # Copy the freshly built module back into the app
+    # Copy the freshly built module back into the app.
+    #
+    # The npm tarball ships prebuilds for every platform, so copying it
+    # back verbatim would reintroduce exactly the darwin/win32 binaries
+    # Phase 1 deleted. Prune right after the copy and re-count.
     local target_path="$app_dir/node_modules/$module_name"
     rm -rf "$target_path"
     mkdir -p "$(dirname "$target_path")"
     cp -a "$built_path" "$target_path"
-    info "  Installed fresh $module_name@$module_version (${node_count} native files)"
+    purge_foreign_binaries_in "$target_path"
+
+    local final_count
+    final_count="$(find "$target_path" -name '*.node' -type f 2>/dev/null | wc -l)"
+    if [ "$final_count" -eq 0 ] && [ "$allow_fail" -eq 0 ]; then
+        error "Platform prune removed every native file for $module_name@$module_version"
+    fi
+    info "  Installed fresh $module_name@$module_version (${final_count} native files after platform prune)"
 }
 
 rebuild_critical_modules() {
@@ -290,6 +334,9 @@ refresh_npm_package() {
     rm -rf "$package_path"
     mkdir -p "$(dirname "$package_path")"
     cp -a "$source_path" "$package_path"
+    # Same tarball caveat as build_native_module_fresh: prune any non-Linux
+    # prebuilds the npm package carried along.
+    purge_foreign_binaries_in "$package_path"
 }
 
 install_lydell_node_pty_linux() {

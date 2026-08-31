@@ -17,7 +17,11 @@
 | `prebuilds/win32-x64/conpty.node` | PE | ❌ 删除 |
 | `prebuilds/win32-x64/conpty_console_list.node` | PE | ❌ 删除 |
 
-**处理**: 从 npm 拉取 `node-pty@1.1.0` 源码，针对 Electron 41.1.1 + Linux 重新编译，整个模块替换。
+**处理**: 从 npm 拉取 `node-pty@1.1.0` 源码，针对 Electron 37.10.3 + Linux 重新编译，整个模块替换。
+
+> ⚠️ 注意：npm 发布的 tarball 同时包含 darwin/win32 的 prebuilds。`build_native_module_fresh`
+> 在把重建结果拷回应用目录后，会调用 `purge_foreign_binaries_in` 清掉这些外来平台产物，
+> 否则 Phase 1 的清理会被 Phase 3 的整包回拷原样抵消。
 
 ### 2. `node_modules/better-sqlite3` — **关键模块，需从源码重建**
 

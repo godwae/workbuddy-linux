@@ -51,6 +51,48 @@ if (!asarPath || !marker) {
 function log(msg) { console.log('  [apply-linux-patches] ' + msg); }
 
 // ---------------------------------------------------------------------------
+// Patch bookkeeping.
+//
+// Historically every patch was guarded by a bare `if (idx >= 0)` with no
+// else branch, so a drifted anchor silently disabled a patch with no output
+// at all. Every patch now reports one of four states and the run ends with a
+// summary. Set WB_PATCH_STRICT=1 to turn any hard failure into a non-zero
+// exit (useful in CI or when validating a new upstream release).
+// ---------------------------------------------------------------------------
+const STRICT = process.env.WB_PATCH_STRICT === '1';
+const results = [];
+
+function record(name, status, detail) {
+    results.push({ name, status, detail: detail || '' });
+    const tag = { applied: '[OK]  ', skipped: '[SKIP]', na: '[N/A] ', failed: '[FAIL]' }[status] || '[??]  ';
+    log(tag + ' ' + name + (detail ? ' — ' + detail : ''));
+    if (status === 'failed' && STRICT) {
+        console.error('[apply-linux-patches] STRICT: required patch failed: ' + name);
+        process.exit(7);
+    }
+}
+
+function summarize() {
+    const by = (s) => results.filter((r) => r.status === s).length;
+    log('---- patch summary ----');
+    log('applied=' + by('applied') + ' skipped=' + by('skipped') +
+        ' n/a=' + by('na') + ' failed=' + by('failed'));
+    const failed = results.filter((r) => r.status === 'failed');
+    if (failed.length) {
+        console.error('[apply-linux-patches] ' + failed.length +
+            ' patch(es) FAILED. Upstream code drifted — re-anchor against the new bundle.');
+        for (const f of failed) console.error('  - ' + f.name + (f.detail ? ': ' + f.detail : ''));
+    }
+}
+
+/** Replace only the first occurrence of `needle`. */
+function replaceOnce(source, needle, replacement) {
+    const i = source.indexOf(needle);
+    if (i < 0) return null;
+    return source.slice(0, i) + replacement + source.slice(i + needle.length);
+}
+
+// ---------------------------------------------------------------------------
 // 1. Extract the asar into a temp dir. We pull file contents straight from
 //    asar.extractFile() instead of relying on the CLI so that:
 //      (a) we don't depend on the CLI sniffing the sibling .unpacked dir,
@@ -415,28 +457,49 @@ const SHIM_BODY = `// ${marker} — WorkBuddy Linux runtime patches (env + tray)
 })();
 `;
 
-if (source.includes(marker)) {
-    log('marker already present in main/index.js; skipping source patch');
-} else {
-    const shim = SHIM_BODY;
-    source = shim + source;
+// ---------------------------------------------------------------------------
+// Patch the main-process bundle.
+//
+// Each patch below is independent and guarded by its own marker, so this
+// script is idempotent: re-running it (or upgrading from an older shim
+// generation) applies only what is still missing, instead of skipping the
+// whole block merely because the env shim is already present.
+// ---------------------------------------------------------------------------
+const TRAY_MARKER = '__WB_TRAY_PATCH_V1__';
+const WINCTRL_MARKER = '__WB_WINCTRL_PATCH_V1__';
+const UPDATERPC_MARKER = '__WB_UPDATERPC_PATCH_V1__';
+const AUTOUPDATE_MARKER = '__WB_AUTOUPDATE_PATCH_V1__';
 
+if (source.includes(marker)) {
+    record('env shim (main/index.js)', 'skipped', 'marker already present');
+} else {
+    source = SHIM_BODY + source;
+    record('env shim (main/index.js)', 'applied', 'env Proxy + spawn env spill');
+}
+
+{
+    // Fix 2 (Linux): attach the tray context menu. libayatana-appindicator
+    // never emits the click/right-click events upstream relies on, so the
+    // menu has to be attached explicitly with setContextMenu().
+    if (source.includes(TRAY_MARKER)) {
+        record('tray context menu + icon path (Fix 2/3)', 'skipped', 'already patched');
+    } else {
     const trayMarker = 'this.tray = new electron.Tray(trayIcon);';
     const trayIdx = source.indexOf(trayMarker);
-    if (trayIdx < 0) {
-        console.error('[apply-linux-patches] ERROR: tray construction line not found');
-        process.exit(4);
-    }
-    const afterTray = source.slice(trayIdx);
+    const afterTray = trayIdx >= 0 ? source.slice(trayIdx) : '';
     const contextMenuDeclRe = /const contextMenu = electron\.Menu\.buildFromTemplate\(\[[\s\S]*?\]\);/;
-    const m = afterTray.match(contextMenuDeclRe);
-    if (!m) {
-        console.error('[apply-linux-patches] ERROR: contextMenu declaration not found after tray');
-        process.exit(5);
-    }
+    const m = afterTray ? afterTray.match(contextMenuDeclRe) : null;
+    if (trayIdx < 0) {
+        record('tray context menu + icon path (Fix 2/3)', 'failed',
+            'tray construction line not found — re-anchor against upstream bundle');
+    } else if (!m) {
+        record('tray context menu + icon path (Fix 2/3)', 'failed',
+            'contextMenu declaration not found after tray — re-anchor against upstream bundle');
+    } else {
     const insertAt = trayIdx + m.index + m[0].length;
     const trayPatch =
-        '\n\t\t\tif (process.platform === "linux") {\n' +
+        '\n\t\t\t// ' + TRAY_MARKER + '\n' +
+        '\t\t\tif (process.platform === "linux") {\n' +
         '\t\t\t\ttry { this.tray.setContextMenu(contextMenu); } catch (_) {}\n' +
         '\t\t\t}';
     source = source.slice(0, insertAt) + trayPatch + source.slice(insertAt);
@@ -468,162 +531,218 @@ if (source.includes(marker)) {
         source = source.slice(0, trayIdx2)
             + trayConstructReplacement
             + source.slice(trayIdx2 + trayConstruct.length);
+        record('tray context menu + icon path (Fix 2/3)', 'applied',
+            'setContextMenu() + on-disk PNG icon path');
+    } else {
+        record('tray context menu + icon path (Fix 2/3)', 'failed',
+            'tray construction vanished after the menu patch');
     }
+    } // end of the tray anchor else-branch
+    } // end of the Fix 2/3 patch block
 
     // -----------------------------------------------------------------------
     // Fix 5 (Linux): add window control buttons (minimize/maximize/close).
     //
     // Upstream sets `frame: false` on Linux without providing a
-    // titleBarOverlay (Windows gets one, macOS uses traffic lights).
-    // Electron's titleBarOverlay only works on Wayland, not X11.
-    // We inject a small CSS+JS snippet after the renderer loads that
-    // draws minimize/maximize/close buttons in the top-right corner,
-    // wired to the existing window:minimize/maximize/close RPC channels
-    // exposed via the preload script.
+    // titleBarOverlay (Windows gets one, macOS uses traffic lights), and
+    // Electron's titleBarOverlay only works on Wayland, not X11. We draw
+    // our own buttons in the renderer instead.
+    //
+    // Anchor note: WorkBuddy 5.3.x ships an esbuild bundle, so the logger
+    // is namespaced (`require_logger.windowLog`) and the message is a
+    // template literal carrying a timestamp suffix. Anchor on the stable
+    // substring only, so a bundler rename cannot silently disable this.
+    //
+    // API note: the renderer exposes window control through
+    // `workbuddyDesktop.window.getCurrentWindow()` (see preload/index.js),
+    // NOT through `buddyAPI` — that object only carries telemetry and auth
+    // helpers. We use the documented path and fall back to the generic
+    // `invoke()` dispatcher behind DESKTOP_HOST_CHANNEL_MAP.
     // -----------------------------------------------------------------------
-    const linuxFrameMarker = '...!isMac && !isWindows && { frame: false }';
-    const linuxFrameIdx = source.indexOf(linuxFrameMarker);
-    // Keep frame: false (we draw our own buttons), but remove the
-    // titleBarOverlay we added earlier since it doesn't work on X11.
-    // (No change needed — the marker is already just { frame: false })
-
-    // Inject window control buttons after ready-to-show
-    const readyToShowMarker = 'windowLog.info("[WindowManager] Window ready to show");';
-    const readyToShowIdx = source.indexOf(readyToShowMarker);
-    if (readyToShowIdx >= 0) {
-        const afterReady = readyToShowIdx + readyToShowMarker.length;
-        const windowControlsInjection = `
-                        // [wb-linux-patch] Inject window control buttons on Linux
-                        if (process.platform === "linux" && this.mainWindow) {
-                                this.mainWindow.webContents.once("did-finish-load", () => {
-                                        this.mainWindow?.webContents.executeJavaScript(\`
-                                                (function() {
-                                                        if (document.getElementById('wb-linux-window-controls')) return;
-                                                        var css = document.createElement('style');
-                                                        css.textContent = \\\`
-                                                                #wb-linux-window-controls {
-                                                                        position: fixed;
-                                                                        top: 0;
-                                                                        right: 0;
-                                                                        z-index: 99999;
-                                                                        display: flex;
-                                                                        height: 36px;
-                                                                        -webkit-app-region: no-drag;
-                                                                }
-                                                                #wb-linux-window-controls button {
-                                                                        width: 46px;
-                                                                        height: 36px;
-                                                                        border: none;
-                                                                        background: transparent;
-                                                                        color: var(--vscode-titleBar-activeForeground, #cccccc);
-                                                                        font-size: 16px;
-                                                                        cursor: pointer;
-                                                                        display: flex;
-                                                                        align-items: center;
-                                                                        justify-content: center;
-                                                                        transition: background 0.1s;
-                                                                }
-                                                                #wb-linux-window-controls button:hover {
-                                                                        background: rgba(255,255,255,0.1);
-                                                                }
-                                                                #wb-linux-window-controls button.wb-close:hover {
-                                                                        background: #e81123;
-                                                                        color: white;
-                                                                }
-                                                                #wb-linux-window-controls button svg {
-                                                                        width: 10px;
-                                                                        height: 10px;
-                                                                        fill: currentColor;
-                                                                }
-                                                        \\\`;
-                                                        document.head.appendChild(css);
-                                                        var container = document.createElement('div');
-                                                        container.id = 'wb-linux-window-controls';
-                                                        container.innerHTML = '<button class="wb-minimize" title="最小化"><svg viewBox="0 0 10 1"><rect width="10" height="1"/></svg></button>'
-                                                                + '<button class="wb-maximize" title="最大化"><svg viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm1 1h8v8H1V1z"/></svg></button>'
-                                                                + '<button class="wb-close" title="关闭"><svg viewBox="0 0 10 10"><path d="M1.41 0L5 3.59 8.59 0 10 1.41 6.41 5 10 8.59 8.59 10 5 6.41 1.41 10 0 8.59 3.59 5 0 1.41z"/></svg></button>';
-                                                        document.body.appendChild(container);
-                                                        container.querySelector('.wb-minimize').onclick = function() {
-                                                                window.buddyAPI && window.buddyAPI.minimizeWindow && window.buddyAPI.minimizeWindow();
+    if (source.includes(WINCTRL_MARKER)) {
+        record('window control buttons (Fix 5)', 'skipped', 'already patched');
+    } else {
+        const readyMatch = source.match(/^[^\n]*Window ready to show[^\n]*/m);
+        if (!readyMatch) {
+            record('window control buttons (Fix 5)', 'failed',
+                '"Window ready to show" line not found — re-anchor against upstream bundle');
+        } else {
+            const afterReady = readyMatch.index + readyMatch[0].length;
+            const windowControlsInjection = `
+                        // ${WINCTRL_MARKER} [wb-linux-patch] window control buttons
+                        if (process.platform === "linux") {
+                                const wbLinuxWindowControls = function() {
+                                        if (document.getElementById('wb-linux-window-controls')) return;
+                                        var css = document.createElement('style');
+                                        css.textContent = [
+                                                '#wb-linux-window-controls{position:fixed;top:0;right:0;z-index:99999;display:flex;height:36px;-webkit-app-region:no-drag;}',
+                                                '#wb-linux-window-controls button{width:46px;height:36px;border:none;background:transparent;color:#cccccc;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}',
+                                                '#wb-linux-window-controls button:hover{background:rgba(255,255,255,0.1);}',
+                                                '#wb-linux-window-controls button.wb-close:hover{background:#e81123;color:#ffffff;}',
+                                                '#wb-linux-window-controls button svg{width:10px;height:10px;fill:currentColor;}'
+                                        ].join('');
+                                        document.head.appendChild(css);
+                                        var box = document.createElement('div');
+                                        box.id = 'wb-linux-window-controls';
+                                        box.innerHTML = '<button class="wb-minimize" title="最小化"><svg viewBox="0 0 10 1"><rect width="10" height="1"/></svg></button>'
+                                                + '<button class="wb-maximize" title="最大化"><svg viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm1 1h8v8H1V1z"/></svg></button>'
+                                                + '<button class="wb-close" title="关闭"><svg viewBox="0 0 10 10"><path d="M1.41 0L5 3.59 8.59 0 10 1.41 6.41 5 10 8.59 8.59 10 5 6.41 1.41 10 0 8.59 3.59 5 0 1.41z"/></svg></button>';
+                                        document.body.appendChild(box);
+                                        var w = null;
+                                        try {
+                                                var d = window.workbuddyDesktop;
+                                                if (d && d.window && typeof d.window.getCurrentWindow === 'function') w = d.window.getCurrentWindow();
+                                        } catch (_) {}
+                                        if (!w) {
+                                                try {
+                                                        var d2 = window.workbuddyDesktop;
+                                                        if (d2 && typeof d2.invoke === 'function') w = {
+                                                                minimize: function() { return d2.invoke('minimizeWindow'); },
+                                                                maximize: function() { return d2.invoke('maximizeWindow'); },
+                                                                close: function() { return d2.invoke('closeWindow'); }
                                                         };
-                                                        container.querySelector('.wb-maximize').onclick = function() {
-                                                                window.buddyAPI && window.buddyAPI.maximizeWindow && window.buddyAPI.maximizeWindow();
-                                                        };
-                                                        container.querySelector('.wb-close').onclick = function() {
-                                                                window.buddyAPI && window.buddyAPI.closeWindow && window.buddyAPI.closeWindow();
-                                                        };
-                                                })();
-                                        \`).catch(function() {});
-                                });
+                                                } catch (_) {}
+                                        }
+                                        var bind = function(sel, fn) {
+                                                var el = box.querySelector(sel);
+                                                if (el) el.addEventListener('click', fn);
+                                        };
+                                        bind('.wb-minimize', function() { if (w && w.minimize) w.minimize(); });
+                                        bind('.wb-maximize', function() { if (w && w.maximize) w.maximize(); });
+                                        bind('.wb-close', function() { if (w && w.close) w.close(); });
+                                };
+                                const wbLinuxInjectControls = () => {
+                                        try {
+                                                const wc = this.mainWindow ? this.mainWindow.webContents : null;
+                                                if (!wc) return;
+                                                wc.executeJavaScript('(' + wbLinuxWindowControls.toString() + ')()').catch(() => {});
+                                        } catch (_) {}
+                                };
+                                this.mainWindow.webContents.once("did-finish-load", wbLinuxInjectControls);
+                                setTimeout(wbLinuxInjectControls, 1500);
+                                setTimeout(wbLinuxInjectControls, 5000);
                         }`;
-        source = source.slice(0, afterReady) + windowControlsInjection + source.slice(afterReady);
+            source = source.slice(0, afterReady) + windowControlsInjection + source.slice(afterReady);
+            record('window control buttons (Fix 5)', 'applied',
+                'injected at "Window ready to show" via workbuddyDesktop window API');
+        }
     }
 
     // -----------------------------------------------------------------------
-    // Fix 6 (Linux): disable the "Check for Updates..." menu item and    // stub out the updateCheck / updateDownload / updateQuitAndInstall
-    // RPCs. The upstream updater talks to the macOS ShipIt / Windows
-    // Squirrel / NSIS installers which are not available on Linux, and
-    // the downloaded payloads (.dmg / .exe) cannot be applied here. We
-    // surface a greyed-out menu entry so users see that auto-update is
-    // intentionally unavailable on the Linux port.
+    // Fix 6a (Linux): grey out the "Check for Updates..." menu entry.
+    //
+    // Upstream 5.3.x removed `getUpdateMenuItem` altogether — the native
+    // application menu no longer carries an update entry, so there is
+    // nothing left to disable. We only patch when the function is present
+    // (it existed in 4.22.x) and report n/a otherwise, so the summary
+    // stays honest instead of silently doing nothing.
     // -----------------------------------------------------------------------
-    const updateMenuMarker = 'function getUpdateMenuItem(texts, updateState) {';
-    const updateMenuIdx = source.indexOf(updateMenuMarker);
-    if (updateMenuIdx >= 0) {
+    const UPDATEMENU_MARKER = '__WB_UPDATEMENU_PATCH_V1__';
+    const updateMenuM = source.match(/function getUpdateMenuItem\([^)]*\)\s*\{/);
+    if (!updateMenuM) {
+        record('update menu entry disabled (Fix 6a)', 'na',
+            'upstream menu ships no update entry (getUpdateMenuItem absent)');
+    } else if (source.includes(UPDATEMENU_MARKER)) {
+        record('update menu entry disabled (Fix 6a)', 'skipped', 'already patched');
+    } else {
         const linuxUpdateShim =
-            updateMenuMarker + '\n' +
+            updateMenuM[0] + '\n' +
+            '\t// ' + UPDATEMENU_MARKER + '\n' +
             '\tif (process.platform === "linux") {\n' +
             '\t\treturn {\n' +
             '\t\t\tid: "checkForUpdates",\n' +
-            '\t\t\tlabel: (texts.checkForUpdates || "Check for Updates...") + " (Linux 不支持)",\n' +
+            '\t\t\tlabel: "Check for Updates... (Linux 不支持)",\n' +
             '\t\t\tdisabled: true,\n' +
             '\t\t\tcommandId: "menu.checkForUpdates.disabled"\n' +
             '\t\t};\n' +
             '\t}';
-        source = source.slice(0, updateMenuIdx)
-            + linuxUpdateShim
-            + source.slice(updateMenuIdx + updateMenuMarker.length);
+        source = replaceOnce(source, updateMenuM[0], linuxUpdateShim);
+        record('update menu entry disabled (Fix 6a)', 'applied', 'menu entry greyed out on Linux');
     }
 
-    // Neutralize updateCheck / updateDownload / updateQuitAndInstall RPCs
-    // on Linux so any residual UI button in the renderer becomes a no-op
-    // instead of invoking the macOS/Windows updater code paths.
-    const updateRpcMarker = 'function registerUpdateHandlers(server, deps) {';
-    const updateRpcIdx = source.indexOf(updateRpcMarker);
-    if (updateRpcIdx >= 0) {
-        const linuxRpcShim =
-            updateRpcMarker + '\n' +
-            '\tif (process.platform === "linux") {\n' +
-            '\t\thandleRpc$1(server, "updateCheck", async () => {});\n' +
-            '\t\thandleRpc$1(server, "updateDownload", async () => {});\n' +
-            '\t\thandleRpc$1(server, "updateArchMismatchDownload", async () => {});\n' +
-            '\t\thandleRpc$1(server, "updateArchMismatchInstall", async () => {});\n' +
-            '\t\thandleRpc$1(server, "updateQuitAndInstall", async () => {});\n' +
-            '\t\thandleRpc$1(server, "updateGetState", async () => ({ state: "idle" }));\n' +
-            '\t\treturn;\n' +
-            '\t}';
-        source = source.slice(0, updateRpcIdx)
-            + linuxRpcShim
-            + source.slice(updateRpcIdx + updateRpcMarker.length);
+    // -----------------------------------------------------------------------
+    // Fix 6b (Linux): stub the update RPCs.
+    //
+    // Two things drifted here. The registry parameter is now `registry`,
+    // not `server`. Far more dangerous, the old injected body hardcoded
+    // the minified identifier `handleRpc$1`, which no longer exists in the
+    // 5.3.x bundle (it is `require_..._coordinator.handleRpc`); injecting
+    // a stale identifier would throw ReferenceError in the main process at
+    // startup. We now resolve the callee from the function body and refuse
+    // to inject at all when it cannot be found.
+    //
+    // updateGetState is intentionally left functional (it is read-only) so
+    // the renderer keeps receiving a well-formed payload.
+    // -----------------------------------------------------------------------
+    const updateRpcM = source.match(/function registerUpdateHandlers\(\s*([\w$]+)\s*,\s*([\w$]+)\s*\)\s*\{/);
+    if (!updateRpcM) {
+        record('update RPCs stubbed (Fix 6b)', 'failed',
+            'registerUpdateHandlers signature not found — re-anchor against upstream bundle');
+    } else if (source.includes(UPDATERPC_MARKER)) {
+        record('update RPCs stubbed (Fix 6b)', 'skipped', 'already patched');
+    } else {
+        const registryVar = updateRpcM[1];
+        const depsVar = updateRpcM[2];
+        const bodyStart = updateRpcM.index + updateRpcM[0].length;
+        const bodySlice = source.slice(bodyStart, bodyStart + 2000);
+        const calleeRe = new RegExp('([\\w$]+(?:\\.[\\w$]+)*)\\.handleRpc\\(\\s*' + registryVar + '\\s*,');
+        const calleeM = bodySlice.match(calleeRe);
+        if (!calleeM) {
+            record('update RPCs stubbed (Fix 6b)', 'failed',
+                'could not resolve the handleRpc callee inside registerUpdateHandlers');
+        } else {
+            const rpc = calleeM[1];
+            const call = (name, body) =>
+                '\t\t' + rpc + '.handleRpc(' + registryVar + ', "' + name + '", ' + body + ');\n';
+            const linuxRpcShim =
+                updateRpcM[0] + '\n' +
+                '\t// ' + UPDATERPC_MARKER + '\n' +
+                '\tif (process.platform === "linux") {\n' +
+                call('updateCheck', 'async () => {}') +
+                call('updateDownload', 'async () => {}') +
+                call('updateArchMismatchDownload', 'async () => {}') +
+                call('updateArchMismatchInstall', 'async () => {}') +
+                call('updateQuitAndInstall', 'async () => {}') +
+                call('updateGetState',
+                    'async () => toUiPayload(await (await Promise.resolve(' + depsVar + '.update)).getState())') +
+                '\t\treturn;\n' +
+                '\t}';
+            source = replaceOnce(source, updateRpcM[0], linuxRpcShim);
+            record('update RPCs stubbed (Fix 6b)', 'applied',
+                'callee resolved as ' + rpc + '.handleRpc(' + registryVar + ', ...)');
+        }
     }
 
-    // Also stub out UpdateServiceLinux.checkForUpdates so the automatic
-    // background update check (triggered by UpdateService.start()) does
-    // not fire HTTP requests to a macOS/Windows feed URL.
-    const linuxUpdateClassMarker = 'UpdateServiceLinux = class extends AbstractUpdateService {';
-    const linuxUpdateClassIdx = source.indexOf(linuxUpdateClassMarker);
-    if (linuxUpdateClassIdx >= 0) {
-        const checkMethodMarker = 'async checkForUpdates(explicit = false) {';
-        const checkMethodIdx = source.indexOf(checkMethodMarker, linuxUpdateClassIdx);
-        if (checkMethodIdx >= 0) {
-            const afterCheck = checkMethodIdx + checkMethodMarker.length;
-            const earlyReturn = '\n\t\t\t\t\t// [wb-linux-patch] Auto-update disabled on Linux port\n\t\t\t\t\treturn;\n';
-            source = source.slice(0, afterCheck) + earlyReturn + source.slice(afterCheck);
+    // -----------------------------------------------------------------------
+    // Fix 6c (Linux): short-circuit UpdateServiceLinux.checkForUpdates.
+    //
+    // The upstream Linux service queries an update feed and drives the
+    // macOS/Windows installers, neither of which applies here. The class
+    // and method names survived the bundler, but we anchor with regexes so
+    // a future rename becomes a reported failure instead of silence.
+    // -----------------------------------------------------------------------
+    if (source.includes(AUTOUPDATE_MARKER)) {
+        record('auto-update short-circuit (Fix 6c)', 'skipped', 'already patched');
+    } else {
+        const classM = source.match(/UpdateServiceLinux\s*=\s*class[^{]*\{/);
+        const methodRe = /async checkForUpdates\([^)]*\)\s*\{/;
+        const afterClass = classM ? source.slice(classM.index + classM[0].length) : '';
+        const methodM = afterClass ? afterClass.match(methodRe) : null;
+        if (!classM || !methodM) {
+            record('auto-update short-circuit (Fix 6c)', 'failed',
+                'UpdateServiceLinux.checkForUpdates not found — re-anchor against upstream bundle');
+        } else {
+            const at = classM.index + classM[0].length + methodM.index + methodM[0].length;
+            const earlyReturn =
+                '\n\t\t\t\t\t// ' + AUTOUPDATE_MARKER + ' auto-update is unavailable on the Linux port\n' +
+                '\t\t\t\t\treturn;\n';
+            source = source.slice(0, at) + earlyReturn + source.slice(at);
+            record('auto-update short-circuit (Fix 6c)', 'applied',
+                'checkForUpdates returns early on Linux');
         }
     }
 
     fs.writeFileSync(indexPath, source);
-    log('patched main/index.js (env shim + tray context menu + tray icon path + disabled updater)');
 }
 
 // ---------------------------------------------------------------------------
@@ -636,16 +755,22 @@ if (source.includes(marker)) {
 // a stale bootstrap value.
 // ---------------------------------------------------------------------------
 const sidecarEntryPath = path.join(tmpDir, 'main', 'sidecar-entry.js');
-if (fs.existsSync(sidecarEntryPath)) {
+if (!fs.existsSync(sidecarEntryPath)) {
+    record('env shim (main/sidecar-entry.js)', 'failed',
+        'sidecar-entry.js missing from the asar — sidecar will not see the product config');
+} else {
     let sidecarSource = fs.readFileSync(sidecarEntryPath, 'utf8');
-    if (!sidecarSource.includes(marker)) {
+    if (sidecarSource.includes(marker)) {
+        record('env shim (main/sidecar-entry.js)', 'skipped', 'marker already present');
+    } else {
         sidecarSource = SHIM_BODY + sidecarSource;
         fs.writeFileSync(sidecarEntryPath, sidecarSource);
-        log('patched main/sidecar-entry.js (env shim)');
-    } else {
-        log('marker already present in main/sidecar-entry.js; skipping');
+        record('env shim (main/sidecar-entry.js)', 'applied', 'env Proxy + _FILE receiver');
     }
 }
+
+// Everything that can be verified without repacking has now been checked.
+summarize();
 
 // ---------------------------------------------------------------------------
 // Ensure @lydell/node-pty-linux-x64 is present in the asar's node_modules

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help deps build-app run-app deb rpm pacman package install check-update clean check
+.PHONY: help deps build-app run-app deb rpm pacman package install check-update verify-patches clean check
 
 help:
 	@echo "Targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make package"
 	@echo "  make install"
 	@echo "  make check-update"
+	@echo "  make verify-patches"
 	@echo "  make check"
 	@echo "  make clean"
 
@@ -44,8 +45,16 @@ install:
 check-update:
 	bash scripts/check-upstream-version.sh
 
+# Verify that every required Linux patch is actually present in the built
+# app.asar. The patcher anchors on upstream source text, so a new upstream
+# release can silently disable a patch — run this after build-app.
+verify-patches:
+	node scripts/lib/verify-patches.js
+
 check:
 	bash -n install.sh scripts/*.sh scripts/lib/*.sh
+	node --check scripts/lib/apply-linux-patches.js
+	node --check scripts/lib/verify-patches.js
 
 clean:
 	rm -rf workbuddy-app workbuddy-app-next dist dist-next
