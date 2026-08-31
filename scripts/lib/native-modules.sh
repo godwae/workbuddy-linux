@@ -113,9 +113,23 @@ purge_all_non_linux_artifacts() {
 # ---------------------------------------------------------------------------
 FOREIGN_BINARIES_REMOVED=0
 
+# The substring `file(1)` prints for the host's own ELF architecture. Empty
+# when the host architecture is unknown, in which case we leave ELF files
+# alone rather than risk deleting something loadable.
+host_elf_arch_pattern() {
+    case "$(uname -m)" in
+        x86_64|amd64) echo "x86-64" ;;
+        aarch64|arm64) echo "ARM aarch64" ;;
+        armv7l|armv6l) echo "ARM" ;;
+        *) echo "" ;;
+    esac
+}
+
 purge_foreign_binaries_in() {
     local scan_dir="$1"
     local native_file description
+    local host_arch
+    host_arch="$(host_elf_arch_pattern)"
 
     [ -d "$scan_dir" ] || return 0
 
@@ -137,6 +151,18 @@ purge_foreign_binaries_in() {
                 warn "  Removing Windows PE binary: $native_file"
                 rm -f "$native_file"
                 FOREIGN_BINARIES_REMOVED=$((FOREIGN_BINARIES_REMOVED + 1))
+                ;;
+            *ELF*)
+                # Upstream bundles prebuilds for architectures this machine
+                # can never execute (koffi ships arm64/armhf/riscv64/musl/
+                # freebsd payloads, @lydell/node-pty ships a linux-arm64
+                # package). They only add weight and make rpmbuild's
+                # brp-strip complain about unrecognised architectures.
+                if [ -n "$host_arch" ] && [[ "$description" != *"$host_arch"* ]]; then
+                    warn "  Removing foreign-arch ELF: $native_file"
+                    rm -f "$native_file"
+                    FOREIGN_BINARIES_REMOVED=$((FOREIGN_BINARIES_REMOVED + 1))
+                fi
                 ;;
         esac
     done < <(find "$scan_dir" \( -name "*.node" -o -name "*.dylib" -o -name "*.so" -o -name "*.dll" \) -type f 2>/dev/null | sort || true)
@@ -494,6 +520,73 @@ install_linux_platform_packages() {
 }
 
 # ---------------------------------------------------------------------------
+# Build toolchain sanitisation.
+#
+# Conda-forge's gcc (and any toolchain built with --prefix set) silently
+# appends -Wl,-rpath,<prefix>/lib to every binary it links. When node-gyp
+# picks that g++ up from PATH, every rebuilt .node ends up carrying the
+# build machine's conda path. Two things then go wrong:
+#
+#   * Fedora's rpmbuild check-rpaths aborts the package with
+#     "ERROR 0002: file ... contains an invalid rpath '/home/user/.../lib'";
+#   * the shipped binary keeps a path that only exists on this machine.
+#
+# Drop conda/venv bin directories from PATH so node-gyp uses the system
+# toolchain. If no system compiler survives the scrub, keep the original
+# PATH — a working build matters more than a clean rpath.
+# ---------------------------------------------------------------------------
+sanitize_build_toolchain() {
+    local scrubbed="" dir found_cxx=0
+    local old_ifs="$IFS"
+    IFS=":"
+
+    for dir in $PATH; do
+        case "$dir" in
+            *anaconda*|*miniconda*|*miniforge*|*mambaforge*|*micromamba*)
+                info "  Excluding conda toolchain from PATH: $dir"
+                continue
+                ;;
+        esac
+        scrubbed="${scrubbed:+$scrubbed:}$dir"
+    done
+    IFS="$old_ifs"
+
+    if [ -n "${CXX:-}" ]; then
+        found_cxx=1
+    else
+        # Probe the scrubbed PATH for a usable C++ compiler.
+        local probe_ifs="$IFS"
+        IFS=":"
+        for dir in $scrubbed; do
+            if [ -x "$dir/g++" ] || [ -x "$dir/c++" ]; then
+                found_cxx=1
+                break
+            fi
+        done
+        IFS="$probe_ifs"
+    fi
+
+    if [ "$found_cxx" -eq 1 ]; then
+        PATH="$scrubbed"
+        export PATH
+        info "  Build toolchain: $(command -v g++ || command -v c++ || echo "${CXX:-system}")"
+    else
+        warn "  No system C++ compiler after conda scrub; keeping original PATH"
+    fi
+
+    # node-gyp shells out to Python to run gyp. Whatever python3 resolves to
+    # after the scrub (Homebrew, pyenv, a venv) is still a foreign runtime —
+    # pin the system interpreter when one exists so the build stays on
+    # distro libraries.
+    if [ -x /usr/bin/python3 ]; then
+        PYTHON=/usr/bin/python3
+        npm_config_python=/usr/bin/python3
+        NPM_CONFIG_PYTHON=/usr/bin/python3
+        export PYTHON npm_config_python NPM_CONFIG_PYTHON
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Main entry point: rebuild_native_modules
 # ---------------------------------------------------------------------------
 rebuild_native_modules() {
@@ -503,6 +596,8 @@ rebuild_native_modules() {
         warn "No node_modules directory found; skipping native rebuild"
         return 0
     }
+
+    sanitize_build_toolchain
 
     info "╔════════════════════════════════════════════════════╗"
     info "║  WorkBuddy Native Module Rebuild for Linux        ║"
