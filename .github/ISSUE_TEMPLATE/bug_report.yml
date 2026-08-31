@@ -1,0 +1,170 @@
+name: 运行时问题 / Runtime bug
+description: 应用能启动，但界面、功能、账号或性能表现异常
+title: "[Runtime]: "
+labels: [ "bug", "needs-triage" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 请先完成下方「提交前检查」。**信息越完整，定位越快**；缺关键环境信息的 issue 会被要求补充，可能长时间无法推进。
+        > English reports are welcome — 可以英文填写。
+        >
+        > 如果你卡在 `make` 构建 / 打包 / 安装阶段，请改用 **「构建打包失败 / Build failure」** 模板。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前检查 / Pre-flight checklist
+      options:
+        - label: 已搜索现有 issue（含已关闭），确认不是重复问题
+        - label: 已阅读 README 的「移植后的已知限制」，确认不属于已知问题
+        - label: 已 `git pull` 拉取本仓库最新代码
+        - label: 已重新执行 `make build-app` 并重新安装，问题在最新产物上仍复现（旧产物导致的问题请先重建再报）
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题分类 / Category
+      description: 选最接近的一项，便于快速分派。
+      options:
+        - 窗口与界面（窗口控制按钮、标题栏、缩放、多屏）
+        - 登录与账号（跳转国际站、Account Access Restricted、登出/重登）
+        - 托盘图标与托盘菜单
+        - 终端 / PTY / 命令行工具调用
+        - 文件与文档（打开、预览、保存、拖拽）
+        - 更新相关（检查更新、更新提示）
+        - 性能、卡死或崩溃
+        - 输入法 / IME
+        - 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      description: >
+        请在终端执行下面这段脚本，把**完整输出**粘贴进来（会自动隐去无关内容，仅本机环境信息）。
+        手工填写容易遗漏，强烈建议直接粘贴命令输出。
+      value: |
+        <details>
+        <summary>一键采集脚本（复制粘贴执行）</summary>
+
+        ```bash
+        {
+          echo "=== /etc/os-release ==="; cat /etc/os-release
+          echo; echo "=== session ==="
+          echo "XDG_SESSION_TYPE=$XDG_SESSION_TYPE"
+          echo "XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP"
+          echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+          echo "DISPLAY=$DISPLAY"
+          echo; echo "=== kernel ==="; uname -a
+          echo; echo "=== build-info.json ==="
+          cat /opt/workbuddy/.workbuddy-linux/build-info.json 2>/dev/null \
+            || cat "$PWD/workbuddy-app/.workbuddy-linux/build-info.json" 2>/dev/null \
+            || echo "NOT FOUND"
+          echo; echo "=== gpu ==="
+          lspci -k 2>/dev/null | grep -iEA2 'vga|3d|display' || echo "lspci unavailable"
+          echo; echo "=== toolchain ==="
+          echo "node: $(node -v 2>/dev/null || echo none)"
+          echo "npm:  $(npm -v 2>/dev/null || echo none)"
+          echo "git HEAD: $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
+        } 2>&1
+        ```
+        </details>
+
+        粘贴输出：
+    validations:
+      required: true
+
+  - type: dropdown
+    id: session_type
+    attributes:
+      label: 会话类型 / Session type
+      description: X11 与 Wayland 下窗口行为差异很大（无边框窗口、服务端装饰、输入法的行为都不同）。
+      options:
+        - Wayland
+        - X11 / XWayland
+        - 不确定
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build_state
+    attributes:
+      label: 产物状态 / Build state
+      description: 很多"问题"其实来自未重建的旧产物（例如旧的窗口控制按钮注入）。请如实选择。
+      options:
+        - 已拉最新代码并重新 `make build-app`，问题仍然复现
+        - 在旧产物上出现，尚未重新构建
+        - 重新构建后问题消失（说明是旧产物导致，可关闭）
+        - 使用他人提供的预编译包，未自行构建
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 现象与复现步骤 / Steps to reproduce
+      description: 请写清「做了什么 → 期望发生什么 → 实际发生什么」。可稳定复现的步骤对定位极为关键。
+      placeholder: |
+        1. 启动应用（/opt/workbuddy/start.sh）
+        2. 点击 ...
+        3. 期望：...
+           实际：...
+        复现频率：每次 / 偶尔（约 x/10）
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或录屏 / Screenshots
+      description: 界面类问题请务必附上。可直接拖拽图片到此处。录屏推荐用 Kooha（Wayland）或 OBS。
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 终端日志 / Logs
+      description: >
+        请用终端启动并附完整输出。日志只输出到终端，默认不写文件：
+
+
+        `ELECTRON_ENABLE_LOGGING=1 /opt/workbuddy/start.sh 2>&1 | tee /tmp/workbuddy.log`
+
+
+        崩溃类问题若有 `core dumped`、`SIGSEGV`、`GPU process exited` 等关键字，请一并贴出。
+      placeholder: |
+        ```
+        粘贴终端输出
+        ```
+
+  - type: textarea
+    id: network
+    attributes:
+      label: 网络与代理环境 / Network & proxy
+      description: >
+        **登录、账号、模型列表、云端同步相关问题必填。** 应用的国内/国际版本由云端按请求出口 IP 下发，
+        代理分流不正确会直接导致登录区域错误（例如跳到国际站并被拒绝）。
+      placeholder: |
+        是否使用代理/透明代理：是（sing-box / Clash / 软路由 ...）/ 否
+        分流规则中是否放行腾讯域名（*.tencent.com、*.qq.com）：是 / 否 / 不清楚
+        出口 IP 归属地区：中国大陆 / 境外 / 不清楚
+
+  - type: textarea
+    id: patches
+    attributes:
+      label: 补丁校验输出 / Patch verification
+      description: >
+        自构建用户请在仓库目录执行 `make verify-patches`，把输出贴在这里。
+        上游升级后补丁锚点可能漂移，这一步能立刻排除"补丁没打上"的可能。
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: 已尝试的排查 / What you tried
+      placeholder: |
+        - 重新构建：...
+        - 切换 X11 / Wayland：...
+        - 其它：...

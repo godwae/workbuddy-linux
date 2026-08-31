@@ -1,0 +1,44 @@
+name: 功能建议 / Feature request
+description: 提出改进建议或新的可配置项
+title: "[Feature]: "
+labels: [ "enhancement" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 本项目是**非官方**的 macOS DMG → Linux 本地转换工具，无法改变上游 WorkBuddy 自身的产品行为。
+        > 若你的诉求属于上游应用功能（如产品交互、模型能力），请反馈给 WorkBuddy 官方。
+        > English reports are welcome.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题 / Problem
+      description: 描述你遇到的场景与痛点，而不是直接给方案。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的方案 / Proposed solution
+      description: 若涉及新增环境变量或 make 目标，请给出你设想的用法。
+      placeholder: |
+        例如：新增 WORKBUDDY_XXX=1，在 main/index.js 的 ... 位置控制 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已考虑的替代方案 / Alternatives
+      description: 包括你正在使用的临时绕法（workaround）。
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      placeholder: |
+        发行版与版本：
+        桌面环境与会话类型（X11 / Wayland）：
+        应用版本（/opt/workbuddy/.workbuddy-linux/build-info.json）：

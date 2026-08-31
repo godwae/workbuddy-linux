@@ -1,0 +1,124 @@
+name: 构建打包失败 / Build failure
+description: make deps / build-app / package / install 阶段报错或产出异常
+title: "[Build]: "
+labels: [ "build", "needs-triage" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 适用于 `make` 流程失败、产出包格式不对、安装后无法启动等**构建期**问题。
+        > 应用能正常启动但功能异常，请改用 **「运行时问题 / Runtime bug」** 模板。
+        >
+        > English reports are welcome — 可以英文填写。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前检查 / Pre-flight checklist
+      options:
+        - label: 已搜索现有 issue（含已关闭），确认不是重复问题
+        - label: 已 `git pull` 拉取本仓库最新代码
+        - label: 已按 README 对应发行版的说明安装依赖（`make deps`）
+        - label: 已执行 `make check`，脚本语法检查通过
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 失败阶段 / Failing stage
+      options:
+        - make deps（依赖安装）
+        - make build-app（下载/解包 DMG、打补丁、重建原生模块）
+        - make package / deb / rpm / pacman（打包）
+        - make install（安装生成的包）
+        - make verify-patches（补丁校验）
+        - 其它 / 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: 执行的命令 / Exact command
+      description: 请贴出你实际执行的完整命令（含环境变量）。
+      placeholder: make package
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 完整终端输出 / Full terminal output
+      description: >
+        **请贴完整输出，不要只贴最后几行**，也不要截图代替文本。
+        从失败点往前至少保留 30 行；若输出很长，请用 `<details>` 折叠。
+      placeholder: |
+        ```
+        粘贴完整输出
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      description: 请执行下面这段脚本并粘贴**完整输出**。
+      value: |
+        ```bash
+        {
+          echo "=== /etc/os-release ==="; cat /etc/os-release
+          echo; echo "=== kernel ==="; uname -a
+          echo; echo "=== toolchain ==="
+          echo "node: $(node -v 2>/dev/null || echo none)"
+          echo "npm:  $(npm -v 2>/dev/null || echo none)"
+          echo "python3: $(python3 -V 2>/dev/null || echo none)"
+          echo "7z: $(7z -version 2>&1 | head -2 || echo none)"
+          echo; echo "=== disk ==="; df -h . /tmp | sed -n '1,5p'
+          echo; echo "=== git ==="; git rev-parse --short HEAD 2>/dev/null || echo n/a
+        } 2>&1
+        ```
+
+        粘贴输出：
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dmg_source
+    attributes:
+      label: DMG 来源 / DMG source
+      description: 本工具依赖官方 macOS DMG 原包；非官方或二次修改的包会导致解包失败或产物异常。
+      options:
+        - 官方渠道下载的原版 DMG
+        - 他人转发 / 非官方渠道获取
+        - 未手动提供，由脚本自动下载
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: dmg_name
+    attributes:
+      label: DMG 文件名 / DMG filename
+      description: 例如 `WorkBuddy-5.3.14.dmg`。放在仓库的 `downloads/` 目录下时脚本会直接使用。
+      placeholder: WorkBuddy-5.3.14.dmg
+
+  - type: textarea
+    id: network
+    attributes:
+      label: 网络环境 / Network
+      description: >
+        若失败发生在「下载 DMG」「npm install」「electron 头文件下载」等环节，请说明网络情况：
+        是否使用代理、是否能直连 GitHub / npm registry、是否配置了 npm 镜像。
+      placeholder: |
+        代理：有（Clash / 软路由透明代理 ...）/ 无
+        npm registry：官方 / 镜像（如 npmmirror）
+        能否访问 github.com：能 / 不能 / 未测试
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: 已尝试的排查 / What you tried
+      placeholder: |
+        - `make clean` 后重建：...
+        - 更换 DMG：...
+        - 显式指定包格式（make rpm / make deb / PACKAGE_FORMAT=...）：...

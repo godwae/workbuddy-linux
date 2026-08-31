@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 已知限制与已修复问题 / Known limitations
+    url: https://github.com/godwae/workbuddy-linux#readme
+    about: 自动更新不可用、托盘行为、登录区域判定等已知问题都记录在 README，请先确认不属于已知项。
+  - name: 搜索现有 issue（含已关闭）
+    url: https://github.com/godwae/workbuddy-linux/issues?q=is%3Aissue
+    about: 本 fork 由原项目 JipZeonGit/workbuddy-linux fork 而来，部分 issue 曾随 fork 自动关闭，请连同已关闭的一起搜索。
+  - name: 使用咨询与讨论 / Discussions
+    url: https://github.com/godwae/workbuddy-linux/discussions
+    about: 环境搭配、配置技巧、非缺陷类问题请到 Discussions，不要占用 issue 队列。
