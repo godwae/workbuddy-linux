@@ -541,12 +541,20 @@ if (source.includes(marker)) {
     } // end of the Fix 2/3 patch block
 
     // -----------------------------------------------------------------------
-    // Fix 5 (Linux): add window control buttons (minimize/maximize/close).
+    // Fix 5 (Linux): window control buttons (minimize/maximize/close).
     //
-    // Upstream sets `frame: false` on Linux without providing a
-    // titleBarOverlay (Windows gets one, macOS uses traffic lights), and
-    // Electron's titleBarOverlay only works on Wayland, not X11. We draw
-    // our own buttons in the renderer instead.
+    // Upstream already renders its own <WindowControls/> on every non-macOS
+    // platform: initWindowControlsContainer() only bails out on isMac, and
+    // the renderer mounts the component into
+    // #workbuddy-window-controls-container during bootstrap. Drawing a
+    // second set unconditionally therefore produced duplicated buttons.
+    //
+    // The injected buttons are now a fallback rather than the default:
+    //   auto  (default) — skip when the upstream container is present;
+    //   force           — always draw ours (WORKBUDDY_WINCTRL=force);
+    //   off             — never draw ours (WORKBUDDY_WINCTRL=off).
+    // Should an earlier pass inject buttons before the upstream container
+    // appears, a later pass detects it and removes them (self-healing).
     //
     // Anchor note: WorkBuddy 5.3.x ships an esbuild bundle, so the logger
     // is namespaced (`require_logger.windowLog`) and the message is a
@@ -571,19 +579,37 @@ if (source.includes(marker)) {
             const windowControlsInjection = `
                         // ${WINCTRL_MARKER} [wb-linux-patch] window control buttons
                         if (process.platform === "linux") {
-                                const wbLinuxWindowControls = function() {
-                                        if (document.getElementById('wb-linux-window-controls')) return;
-                                        var css = document.createElement('style');
+                                const WB_WINCTRL_MODE = (function() {
+                                        const m = (process.env.WORKBUDDY_WINCTRL || "auto").toLowerCase();
+                                        if (m === "force" || m === "on" || m === "1") return "force";
+                                        if (m === "off" || m === "none" || m === "0") return "off";
+                                        return "auto";
+                                })();
+                                const wbLinuxWindowControls = function(mode) {
+                                        var OWN_ID = "wb-linux-window-controls";
+                                        var APP_CTRL_ID = "workbuddy-window-controls-container";
+                                        var own = document.getElementById(OWN_ID);
+                                        var appControls = document.getElementById(APP_CTRL_ID);
+                                        if (appControls && mode !== "force") {
+                                                if (own) own.remove();
+                                                var staleStyle = document.getElementById(OWN_ID + "-style");
+                                                if (staleStyle) staleStyle.remove();
+                                                return;
+                                        }
+                                        if (own) return;
+                                        if (mode === "off") return;
+                                        var css = document.createElement("style");
+                                        css.id = OWN_ID + "-style";
                                         css.textContent = [
-                                                '#wb-linux-window-controls{position:fixed;top:0;right:0;z-index:99999;display:flex;height:36px;-webkit-app-region:no-drag;}',
-                                                '#wb-linux-window-controls button{width:46px;height:36px;border:none;background:transparent;color:#cccccc;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}',
-                                                '#wb-linux-window-controls button:hover{background:rgba(255,255,255,0.1);}',
-                                                '#wb-linux-window-controls button.wb-close:hover{background:#e81123;color:#ffffff;}',
-                                                '#wb-linux-window-controls button svg{width:10px;height:10px;fill:currentColor;}'
-                                        ].join('');
+                                                "#wb-linux-window-controls{position:fixed;top:0;right:0;z-index:99999;display:flex;height:36px;-webkit-app-region:no-drag;}",
+                                                "#wb-linux-window-controls button{width:46px;height:36px;border:none;background:transparent;color:#cccccc;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}",
+                                                "#wb-linux-window-controls button:hover{background:rgba(255,255,255,0.1);}",
+                                                "#wb-linux-window-controls button.wb-close:hover{background:#e81123;color:#ffffff;}",
+                                                "#wb-linux-window-controls button svg{width:10px;height:10px;fill:currentColor;}"
+                                        ].join("");
                                         document.head.appendChild(css);
-                                        var box = document.createElement('div');
-                                        box.id = 'wb-linux-window-controls';
+                                        var box = document.createElement("div");
+                                        box.id = OWN_ID;
                                         box.innerHTML = '<button class="wb-minimize" title="最小化"><svg viewBox="0 0 10 1"><rect width="10" height="1"/></svg></button>'
                                                 + '<button class="wb-maximize" title="最大化"><svg viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm1 1h8v8H1V1z"/></svg></button>'
                                                 + '<button class="wb-close" title="关闭"><svg viewBox="0 0 10 10"><path d="M1.41 0L5 3.59 8.59 0 10 1.41 6.41 5 10 8.59 8.59 10 5 6.41 1.41 10 0 8.59 3.59 5 0 1.41z"/></svg></button>';
@@ -591,31 +617,31 @@ if (source.includes(marker)) {
                                         var w = null;
                                         try {
                                                 var d = window.workbuddyDesktop;
-                                                if (d && d.window && typeof d.window.getCurrentWindow === 'function') w = d.window.getCurrentWindow();
+                                                if (d && d.window && typeof d.window.getCurrentWindow === "function") w = d.window.getCurrentWindow();
                                         } catch (_) {}
                                         if (!w) {
                                                 try {
                                                         var d2 = window.workbuddyDesktop;
-                                                        if (d2 && typeof d2.invoke === 'function') w = {
-                                                                minimize: function() { return d2.invoke('minimizeWindow'); },
-                                                                maximize: function() { return d2.invoke('maximizeWindow'); },
-                                                                close: function() { return d2.invoke('closeWindow'); }
+                                                        if (d2 && typeof d2.invoke === "function") w = {
+                                                                minimize: function() { return d2.invoke("minimizeWindow"); },
+                                                                maximize: function() { return d2.invoke("maximizeWindow"); },
+                                                                close: function() { return d2.invoke("closeWindow"); }
                                                         };
                                                 } catch (_) {}
                                         }
                                         var bind = function(sel, fn) {
                                                 var el = box.querySelector(sel);
-                                                if (el) el.addEventListener('click', fn);
+                                                if (el) el.addEventListener("click", fn);
                                         };
-                                        bind('.wb-minimize', function() { if (w && w.minimize) w.minimize(); });
-                                        bind('.wb-maximize', function() { if (w && w.maximize) w.maximize(); });
-                                        bind('.wb-close', function() { if (w && w.close) w.close(); });
+                                        bind(".wb-minimize", function() { if (w && w.minimize) w.minimize(); });
+                                        bind(".wb-maximize", function() { if (w && w.maximize) w.maximize(); });
+                                        bind(".wb-close", function() { if (w && w.close) w.close(); });
                                 };
                                 const wbLinuxInjectControls = () => {
                                         try {
                                                 const wc = this.mainWindow ? this.mainWindow.webContents : null;
                                                 if (!wc) return;
-                                                wc.executeJavaScript('(' + wbLinuxWindowControls.toString() + ')()').catch(() => {});
+                                                wc.executeJavaScript("(" + wbLinuxWindowControls.toString() + ")(" + JSON.stringify(WB_WINCTRL_MODE) + ")").catch(() => {});
                                         } catch (_) {}
                                 };
                                 this.mainWindow.webContents.once("did-finish-load", wbLinuxInjectControls);
@@ -624,7 +650,7 @@ if (source.includes(marker)) {
                         }`;
             source = source.slice(0, afterReady) + windowControlsInjection + source.slice(afterReady);
             record('window control buttons (Fix 5)', 'applied',
-                'injected at "Window ready to show" via workbuddyDesktop window API');
+                'injected at "Window ready to show"; auto-skipped when upstream WindowControls are present');
         }
     }
 

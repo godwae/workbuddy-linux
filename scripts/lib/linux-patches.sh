@@ -39,12 +39,19 @@
 #   UpdateServiceLinux.checkForUpdates is short-circuited so the periodic
 #   background check never hits the update feed.
 #
-# Fix 5 — window control buttons (minimize/maximize/close):
-#   Upstream sets frame: false on Linux without a titleBarOverlay, which
-#   Electron only honours on Wayland, not X11. We draw our own buttons in
-#   the renderer and wire them to
-#   workbuddyDesktop.window.getCurrentWindow() — note the renderer API is
-#   NOT `buddyAPI`; that object only carries telemetry and auth helpers.
+# Fix 5 — window control buttons (minimize/maximize/close) — FALLBACK ONLY:
+#   Upstream already renders its own <WindowControls/> on every non-macOS
+#   platform: initWindowControlsContainer() only bails out on isMac, and
+#   the renderer mounts the component into
+#   #workbuddy-window-controls-container during bootstrap. Drawing a second
+#   set unconditionally produced duplicated buttons on Linux.
+#   The injected buttons are therefore a fallback, gated by
+#   WORKBUDDY_WINCTRL: auto (default, skip when the upstream container is
+#   present) / force (always draw) / off (never draw). A later pass also
+#   removes buttons injected before the upstream container appeared.
+#   They are wired to workbuddyDesktop.window.getCurrentWindow() — note the
+#   renderer API is NOT `buddyAPI`; that object only carries telemetry and
+#   auth helpers.
 #
 # Anchoring:
 #   Every patch is anchored on upstream source text, so a bundler upgrade
