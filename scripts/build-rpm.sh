@@ -67,6 +67,24 @@ EOF
     fi
 
     cat > "$SPEC_FILE" <<EOF
+# /opt/$PACKAGE_NAME is a self-contained upstream Electron bundle, so the
+# usual Fedora QA passes do more harm than good here:
+#
+#   check-rpaths — any rpath baked in by the build machine's toolchain
+#     (conda-forge gcc injects -Wl,-rpath,<prefix>/lib) is reported as
+#     "ERROR 0002: invalid rpath" and aborts the build, even though the
+#     value is meaningless once the package is installed.
+#   brp-strip — upstream ships prebuilt .node payloads for arm64, armhf,
+#     riscv64, musl and FreeBSD; strip(1) cannot parse them and floods
+#     the log with "Unable to recognise the architecture".
+#   debug_package — would try to build a debuginfo subpackage from an
+#     800MB prebuilt bundle.
+%global __brp_check_rpaths %{nil}
+%global __brp_strip %{nil}
+%global __brp_strip_comment_note %{nil}
+%global __brp_strip_static_archive %{nil}
+%global debug_package %{nil}
+
 # Exclude bundled multi-platform binaries from automatic dependency scanning.
 # The app ships Electron runtimes for armhf, loongarch, riscv64, FreeBSD, and
 # musl — their library deps are not resolvable on a standard Linux system.
