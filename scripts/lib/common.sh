@@ -18,6 +18,48 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1 || error "Missing required command: $1"
 }
 
+# ---------------------------------------------------------------------------
+# detect_package_family
+#
+# Decide which native package format this distro should build/install.
+# The distro's *native* family is determined from /etc/os-release first:
+# Fedora/RHEL boxes often have dpkg pulled in as a dependency of other
+# tooling, and a pure tool-availability check would then build/install a
+# .deb on an RPM system. Fall back to tool availability only when the
+# os-release family is unrecognised.
+#
+# Prints: deb | rpm | pacman, or nothing if undetermined.
+# ---------------------------------------------------------------------------
+os_release_family() {
+    local distro_id distro_like
+    if [ -r /etc/os-release ]; then
+        distro_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
+        distro_like="$(. /etc/os-release && printf '%s' "${ID_LIKE:-}")"
+    fi
+    case "$distro_like $distro_id" in
+        *debian*|*ubuntu*|*mint*) echo "deb" ;;
+        *fedora*|*rhel*|*centos*|*suse*|*opensuse*) echo "rpm" ;;
+        *arch*|*manjaro*|*cachyos*) echo "pacman" ;;
+    esac
+}
+
+available_tool_family() {
+    if command -v dpkg-deb >/dev/null 2>&1 && command -v dpkg >/dev/null 2>&1; then
+        echo "deb"
+    elif command -v rpmbuild >/dev/null 2>&1; then
+        echo "rpm"
+    elif command -v makepkg >/dev/null 2>&1; then
+        echo "pacman"
+    fi
+}
+
+detect_package_family() {
+    local by_id
+    by_id="$(os_release_family)"
+    [ -n "$by_id" ] && { echo "$by_id"; return 0; }
+    available_tool_family
+}
+
 find_7z() {
     if command -v 7zz >/dev/null 2>&1; then
         command -v 7zz

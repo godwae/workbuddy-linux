@@ -48,15 +48,30 @@ install_pacman() {
 }
 
 main() {
-    if command -v dpkg >/dev/null 2>&1 && install_deb; then
-        return 0
-    fi
-    if install_rpm; then
-        return 0
-    fi
-    if install_pacman; then
-        return 0
-    fi
+    local family
+
+    # Prefer the distro's native family (from /etc/os-release) so a Fedora
+    # box that happens to have dpkg installed doesn't get a stale .deb from
+    # dist/ installed over the real .rpm.
+    family="$(detect_package_family)"
+
+    case "$family" in
+        deb)
+            install_deb && return 0
+            ;;
+        rpm)
+            install_rpm && return 0
+            ;;
+        pacman)
+            install_pacman && return 0
+            ;;
+    esac
+
+    # Neither the distro family nor a matching tool was recognised. Fall
+    # back to whatever artifact actually exists in dist/.
+    install_deb && return 0
+    install_rpm && return 0
+    install_pacman && return 0
 
     error "No installable package artifact found in dist/. Run make package first."
 }

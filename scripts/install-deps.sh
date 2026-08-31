@@ -18,19 +18,47 @@ error() {
 }
 
 detect_distro() {
-    if command -v apt-get >/dev/null 2>&1; then
-        echo "apt"
-    elif command -v dnf5 >/dev/null 2>&1; then
-        echo "dnf5"
-    elif command -v dnf >/dev/null 2>&1; then
-        echo "dnf"
-    elif command -v pacman >/dev/null 2>&1; then
-        echo "pacman"
-    elif command -v zypper >/dev/null 2>&1; then
-        echo "zypper"
-    else
-        echo "unknown"
+    # Prefer the distro's native package manager from /etc/os-release, not
+    # raw tool availability: Fedora/RHEL boxes often have apt-get installed
+    # as a dependency of other tooling, and an apt-first order would then
+    # try to install Debian package names (libx11-dev, libxkbfile-dev, …)
+    # that do not exist on RPM systems. Fall back to tool availability only
+    # when the os-release family is unrecognised.
+    local distro_id distro_like manager
+    manager=""
+
+    if [ -r /etc/os-release ]; then
+        distro_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
+        distro_like="$(. /etc/os-release && printf '%s' "${ID_LIKE:-}")"
+        case "$distro_like $distro_id" in
+            *debian*|*ubuntu*|*mint*) manager="apt" ;;
+            *fedora*|*rhel*|*centos*)
+                if command -v dnf5 >/dev/null 2>&1; then
+                    manager="dnf5"
+                elif command -v dnf >/dev/null 2>&1; then
+                    manager="dnf"
+                fi
+                ;;
+            *suse*|*opensuse*) manager="zypper" ;;
+            *arch*|*manjaro*|*cachyos*) manager="pacman" ;;
+        esac
     fi
+
+    if [ -z "$manager" ]; then
+        if command -v dnf5 >/dev/null 2>&1; then
+            manager="dnf5"
+        elif command -v dnf >/dev/null 2>&1; then
+            manager="dnf"
+        elif command -v pacman >/dev/null 2>&1; then
+            manager="pacman"
+        elif command -v zypper >/dev/null 2>&1; then
+            manager="zypper"
+        elif command -v apt-get >/dev/null 2>&1; then
+            manager="apt"
+        fi
+    fi
+
+    [ -n "$manager" ] && echo "$manager" || echo "unknown"
 }
 
 node_major() {

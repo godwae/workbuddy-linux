@@ -98,6 +98,41 @@
 
 **处理**: Windows DLL 全部删除。macOS `sandbox-cli` 与底下的 `tsbx` 系列动态库同属于腾讯内部私有的代码执行沙盒引擎（Tencent Sandbox），在 npm 或开源社区没有对应的 Linux 版本。因此此沙盒功能在 Linux 上不可用（降级为无沙盒执行）。
 
+### 11. `node_modules/koffi` — **FFI 库，5.4.5 新增，需清理异架构 ELF**
+
+> 5.3.x 的审计未覆盖此模块。`koffi` 是 node-ffi 类绑定库，其 npm tarball 内含全平台预编译的 `koffi.node`。`file(1)` 判定全部为 ELF，因此原有只认 Mach-O / PE 的清理逻辑不会触碰它们。**实测（Fedora 44, x86_64）`make build-app` 会把整棵 17 平台目录原样打进包**，且 Fedora 的 `brp-strip` 会因无法解析 arm64/riscv64/musl/FreeBSD 的 ELF 而报 "Unable to recognise the architecture"。
+
+| 文件 | 格式 | 处理方式 |
+|------|------|---------|
+| `build/koffi/linux_x64/koffi.node` | ELF x86-64 | ✅ 保留（本机架构） |
+| `build/koffi/musl_x64/koffi.node` | ELF x86-64 (musl) | ⚠️ 保留（架构匹配，保守策略） |
+| `build/koffi/darwin_arm64/koffi.node` | Mach-O | ❌ 删除 |
+| `build/koffi/darwin_x64/koffi.node` | Mach-O | ❌ 删除 |
+| `build/koffi/win32_arm64/koffi.node` | PE | ❌ 删除 |
+| `build/koffi/win32_x64/koffi.node` | PE | ❌ 删除 |
+| `build/koffi/win32_ia32/koffi.node` | PE | ❌ 删除 |
+| `build/koffi/linux_arm64/koffi.node` | ELF ARM aarch64 | ❌ 删除 |
+| `build/koffi/linux_armhf/koffi.node` | ELF ARM | ❌ 删除 |
+| `build/koffi/linux_ia32/koffi.node` | ELF Intel i386 | ❌ 删除 |
+| `build/koffi/linux_loong64/koffi.node` | ELF LoongArch | ❌ 删除 |
+| `build/koffi/linux_riscv64d/koffi.node` | ELF UCB RISC-V | ❌ 删除 |
+| `build/koffi/musl_arm64/koffi.node` | ELF ARM aarch64 | ❌ 删除 |
+| `build/koffi/freebsd_arm64/koffi.node` | ELF ARM aarch64 | ❌ 删除 |
+| `build/koffi/freebsd_x64/koffi.node` | ELF x86-64 | ❌ 删除 |
+| `build/koffi/freebsd_ia32/koffi.node` | ELF Intel i386 | ❌ 删除 |
+| `build/koffi/openbsd_x64/koffi.node` | ELF x86-64 | ❌ 删除 |
+| `build/koffi/openbsd_ia32/koffi.node` | ELF Intel i386 | ❌ 删除 |
+
+**处理**: 由 `purge_foreign_binaries_in()` 的 ELF 架构判定统一清理（`file(1)` 输出与本机 `uname -m` 比对，只删架构不匹配的产物）。本机为 x86_64 时实际删除 arm64/armhf/ia32/loong64/riscv64/musl-arm64/freebsd/openbsd 共 9 个文件；`musl_x64` 与 `linux_x64` 架构匹配故保留。
+
+### 12. `@lydell/node-pty-linux-arm64` — **非本机架构的 Linux 平台包**
+
+| 文件 | 格式 | 处理方式 |
+|------|------|---------|
+| `prebuilds/linux-arm64/pty.node` | ELF ARM aarch64 | ❌ 删除 |
+
+**处理**: 与 koffi 同理，由 ELF 架构判定删除。在 x86_64 机器上该包只剩纯 JS 的 `lib/` 目录，随 `@lydell/node-pty` 的 repack 一起注入 asar 时被剥离。`lib/index.js` 通过 `node-pre-gyp` 按平台加载对应 `pty.node`，本机走 `linux-x64` 分支，不受影响。
+
 ## 处理策略总结
 
 | 策略 | 模块 |
@@ -107,5 +142,6 @@
 | **下载 Linux 版替换** | `cli/vendor/ripgrep` (ripgrep Linux binary) |
 | **直接删除（macOS 专用）** | `fsevents`, `@lydell/node-pty-darwin-*` (四处) |
 | **直接删除（Windows 专用）** | sandbox `*.dll/*.exe` |
+| **清理异架构 ELF（本机架构保留）** | `koffi` (5.4.5 新增), `@lydell/node-pty-linux-arm64` |
 | **无法移植（私有模块）** | `@tencent/docs-engine` (腾讯文档引擎，可选功能) |
 | **无法移植（私有模块）** | `cli/vendor/sandbox/sandbox-cli` (腾讯私有代码沙盒) |
