@@ -6,9 +6,17 @@ set -euo pipefail
 # 背景：workbuddy-linux 禁用了应用内"检查更新"（上游更新器依赖 macOS ShipIt /
 # Windows Squirrel 安装器，在 Linux 上不可用）。但 WorkBuddy 的升级查询接口是公开的：
 #   GET https://copilot.tencent.com/v2/update?platform=<platform>&version=<ver>
-# 该接口无需登录，直接返回最新发布包的 version / productVersion / url /
-# sha256hash 等字段（应用内部升级模块同样调用此接口，其内置示例即使用
-# version=0.0.0 拉取最新包）。
+# 该接口无需登录，直接返回可升级目标包的 version / productVersion / url /
+# sha256hash 等字段。
+#
+# ⚠️ 关于 version 参数（2026-09 实测修正）：
+#   该接口是"增量升级查询"，语义为「从 version 升级到哪个版本」，不是「返回最新发布版」。
+#     version=<真实版本>  → 返回该版本可升级到的目标包
+#     version=<已是最新>  → 返回空响应（表示无可用更新）
+#     version=0.0.0       → 服务端匹配不到有效基准，回落到一个久未更新的兜底包
+#                           （实测返回 5.3.14，而当时实际最新为 5.4.7）
+#   早期版本的应用内升级模块曾以 version=0.0.0 拉取最新包，本脚本沿用了该写法，
+#   导致官方更新通道变动后一直误报旧版本。现改为传入真实的本地版本作为基准。
 #
 # 由于官方并未发布 Linux 构建（workbuddy-linux / workbuddy-linux-x64 均返回
 # "invalid platform"），本脚本跟踪官方 macOS（Intel x64）DMG 发布通道——
@@ -17,9 +25,10 @@ set -euo pipefail
 #
 # 用法：
 #   bash scripts/check-upstream-version.sh            # 自动读取本地版本
-#   bash scripts/check-upstream-version.sh 5.3.14     # 手动指定本地版本
+#   bash scripts/check-upstream-version.sh 5.4.5      # 手动指定本地版本
 #   make check-update                                 # 等价于第一种
 #   WORKBUDDY_UPDATE_PLATFORM=workbuddy-darwin-arm64 make check-update
+#   WORKBUDDY_UPDATE_BASE_VERSION=5.3.14 make check-update  # 指定查询基准版本
 #
 # 退出码：
 #   0 = 已是最新版本
@@ -67,20 +76,25 @@ resolve_local_version() {
 }
 
 query_latest() {
-    # version=0.0.0 触发接口返回当前最新发布包（接口官方示例即采用此值）
+    # $1 = 查询基准版本。接口是增量升级查询：传入当前版本，服务端返回可升级到的
+    # 目标包；已是最新时返回空响应。切勿传 0.0.0 —— 那会落到一个陈旧的兜底包。
+    local base_version="$1"
     curl -sS --max-time 20 -G "$UPGRADE_ENDPOINT" \
         --data-urlencode "platform=$UPDATE_PLATFORM" \
-        --data-urlencode "version=0.0.0" \
+        --data-urlencode "version=$base_version" \
         -H "User-Agent: Mozilla/5.0"
 }
 
 main() {
-    local local_version resp
+    local local_version base_version resp
     local_version="$(resolve_local_version "${1:-}")"
+    # 查询基准默认取本地版本；可用 WORKBUDDY_UPDATE_BASE_VERSION 覆盖以模拟其他版本。
+    base_version="${WORKBUDDY_UPDATE_BASE_VERSION:-$local_version}"
     info "本地版本: $local_version"
     info "查询通道: $UPDATE_PLATFORM"
+    info "查询基准: $base_version"
 
-    if ! resp="$(query_latest)"; then
+    if ! resp="$(query_latest "$base_version")"; then
         error "查询失败（网络不可达或端点拒绝）"
         exit 2
     fi
@@ -113,7 +127,8 @@ except Exception:
     data = {}
 
 if not data:
-    print("[check-update] 已是最新版本（接口未返回更新包）")
+    # 增量升级接口在「基准版本已是最新」时返回空响应。
+    print("[check-update] 已是最新版本（官方未返回比 %s 更新的更新包）" % local_version)
     sys.exit(0)
 
 if 'code' in data and 'version' not in data:
@@ -128,6 +143,17 @@ sha = data.get('sha256hash', '')
 
 local_rel = parse_ver(local_version)[:3]
 latest_rel = parse_ver(latest)[:3]
+
+# 防御：若基准版本传的是 0.0.0 之类的无效值，服务端会回落到陈旧兜底包，
+# 表现为「返回的 version 反而比本地版本旧」。这种情况不能判为已是最新。
+if cmp_tuple(latest_rel, local_rel) < 0:
+    print("[check-update] 警告: 接口返回版本 %s 比本地版本 %s 更旧，"
+          % (latest, local_version), file=sys.stderr)
+    print("[check-update]       查询基准版本可能无效（例如 0.0.0 会命中服务端兜底包）。",
+          file=sys.stderr)
+    print("[check-update]       请用 WORKBUDDY_UPDATE_BASE_VERSION 指定有效基准版本后重试。",
+          file=sys.stderr)
+    sys.exit(2)
 
 if cmp_tuple(latest_rel, local_rel) > 0:
     print("[check-update] 官方已发布新版本: %s" % latest)
