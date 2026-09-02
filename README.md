@@ -179,7 +179,8 @@ WorkBuddy 基于 VS Code/Electron 开发，其 macOS 应用的 `app.asar` 文件
 3. **托盘图标显示为感叹号**：上游把图片 resize 成内存 NativeImage 传给 Tray，AppIndicator 无法正确渲染。**修复方式**：Linux 下直接用磁盘上的 `.workbuddy-linux/workbuddy.png` 路径构造 Tray。
 4. **Sidecar 子进程 spawn 失败（E2BIG）**：`buildCliEnv()` 显式把 260KB 字符串塞进 spawn 的 env 对象。**修复方式**：Monkey-patch `child_process.spawn/spawnSync`，超过 100KB 的 env 条目自动 spill 到临时文件，子进程启动时从文件读回并通过 Proxy 恢复。
 5. **`@lydell/node-pty-linux-x64` 找不到**：原 macOS asar 里只有 darwin 平台包。**修复方式**：repack 时将 Linux 平台包注入 asar 并标记为 unpacked。
-6. **Linux 右上角出现两套最小化/最大化/关闭按钮**：上游在所有非 macOS 平台都会渲染自带的 `<WindowControls/>`——`initWindowControlsContainer()` 仅在 `isMac` 时返回 null，渲染进程启动时把组件挂载到 `#workbuddy-window-controls-container`。早期版本无条件额外注入一套自绘按钮，导致右上角出现重复图标（**与系统主题无关**）。**修复方式**：注入逻辑改为**兜底**而非默认——检测到上游容器存在时自动跳过，并会移除此前误注入的按钮；按钮仍经 `workbuddyDesktop.window.getCurrentWindow()` 调用主进程窗口控制通道（该对象是 preload 实际暴露的 API，并非 `buddyAPI`）。可用 `WORKBUDDY_WINCTRL` 覆盖：`auto`（默认，存在上游控件时跳过）/ `force`（强制注入自绘按钮）/ `off`（永不注入）。
+6. **右上角出现两套窗口控制按钮**：上游在所有非 macOS 平台自带 `<WindowControls/>`，早期版本无条件再注入一套导致重复（与系统主题无关）。**修复方式**：注入改为兜底——检测到上游容器即跳过并移除误注入；可用 `WORKBUDDY_WINCTRL` 覆盖：`auto`（默认）/ `force`（强制注入）/ `off`（永不注入）。
+7. **浮层按钮点不动（能 hover 但无响应，如删除任务的「确认删除」）**：`-webkit-app-region: drag` 区按命中测试吞掉 `click`；上游规避只覆盖 `.workbuddy-topbar`，Linux 因未设置 `data-platform` 额外命中 macOS 竞态兜底的 36px `::before` 拖拽条（拖拽区达 y=0..66），菜单栏同样不在规避范围。**修复方式**：给 Linux 设专属 `data-platform="linux"`，并让菜单栏仅在指针位于其空白区域时可拖拽（落在菜单项或被浮层覆盖时自动 `no-drag`）。
 
 ## 常用自定义配置
 
@@ -356,7 +357,8 @@ WorkBuddy 基於 VS Code/Electron 開發，其 macOS 應用程式的 `app.asar` 
 3. **系統匣圖示顯示為驚嘆號**：上游把圖片 resize 成記憶體 NativeImage 傳給 Tray，AppIndicator 無法正確渲染。**修復方式**：Linux 下直接用磁碟上的 `.workbuddy-linux/workbuddy.png` 路徑構造 Tray。
 4. **Sidecar 子程序 spawn 失敗（E2BIG）**：`buildCliEnv()` 顯式把 260KB 字串塞進 spawn 的 env 物件。**修復方式**：Monkey-patch `child_process.spawn/spawnSync`，超過 100KB 的 env 條目自動 spill 到臨時檔案，子程序啟動時從檔案讀回並透過 Proxy 恢復。
 5. **`@lydell/node-pty-linux-x64` 找不到**：原 macOS asar 裡只有 darwin 平台套件。**修復方式**：repack 時將 Linux 平台套件注入 asar 並標記為 unpacked。
-6. **Linux 右上角出現兩套最小化/最大化/關閉按鈕**：上游在所有非 macOS 平台都會渲染自帶的 `<WindowControls/>`——`initWindowControlsContainer()` 僅在 `isMac` 時回傳 null，渲染程序啟動時把元件掛載到 `#workbuddy-window-controls-container`。早期版本無條件額外注入一套自繪按鈕，導致右上角出現重複圖示（**與系統主題無關**）。**修復方式**：注入邏輯改為**兜底**而非預設——偵測到上游容器存在時自動跳過，並會移除先前誤注入的按鈕；按鈕仍經 `workbuddyDesktop.window.getCurrentWindow()` 呼叫主程序視窗控制通道（該物件是 preload 實際暴露的 API，並非 `buddyAPI`）。可用 `WORKBUDDY_WINCTRL` 覆蓋：`auto`（預設，存在上游控件時跳過）/ `force`（強制注入自繪按鈕）/ `off`（永不注入）。
+6. **右上角出現兩套視窗控制按鈕**：上游在所有非 macOS 平台自帶 `<WindowControls/>`，早期版本無條件再注入一套導致重複（與系統主題無關）。**修復方式**：注入改為兜底——偵測到上游容器即跳過並移除誤注入；可用 `WORKBUDDY_WINCTRL` 覆蓋：`auto`（預設）/ `force`（強制注入）/ `off`（永不注入）。
+7. **浮層按鈕點不動（能 hover 但無回應，如刪除任務的「確認刪除」）**：`-webkit-app-region: drag` 區按命中測試吞掉 `click`；上游規避只覆蓋 `.workbuddy-topbar`，Linux 因未設定 `data-platform` 額外命中 macOS 競態兜底的 36px `::before` 拖曳條（拖曳區達 y=0..66），選單列同樣不在規避範圍。**修復方式**：給 Linux 設專屬 `data-platform="linux"`，並讓選單列僅在指標位於其空白區域時可拖曳（落在選單項目或被浮層覆蓋時自動 `no-drag`）。
 
 ## 常用自訂設定
 
@@ -533,7 +535,8 @@ The following issues have been resolved via Linux runtime patches (`scripts/lib/
 3. **Tray icon shows as exclamation mark**: Upstream passes a resized in-memory NativeImage to Tray, which AppIndicator cannot render. **Fix**: On Linux, construct the Tray from the on-disk `.workbuddy-linux/workbuddy.png` path.
 4. **Sidecar subprocess spawn fails (E2BIG)**: `buildCliEnv()` explicitly puts the 260KB string into the spawn env object. **Fix**: Monkey-patch `child_process.spawn/spawnSync` to spill env entries >100KB to temp files; child processes restore the value from file on startup.
 5. **`@lydell/node-pty-linux-x64` not found**: The original macOS asar only contains darwin platform packages. **Fix**: Inject the Linux platform package into the asar during repack and mark it as unpacked.
-6. **Two sets of minimize/maximize/close buttons in the top-right corner on Linux**: Upstream renders its own `<WindowControls/>` on every non-macOS platform — `initWindowControlsContainer()` only returns null for `isMac`, and the renderer mounts the component into `#workbuddy-window-controls-container` during bootstrap. An earlier revision injected a second, unconditional set, producing duplicated icons (**this is not a system-theme conflict**). **Fix**: The injection is now a fallback rather than the default — it auto-skips when the upstream container is present and removes any buttons a previous pass injected; the buttons are still wired through `workbuddyDesktop.window.getCurrentWindow()` to the main-process window-control channels (that object is the API actually exposed by the preload — not `buddyAPI`). Override with `WORKBUDDY_WINCTRL`: `auto` (default, skip when upstream controls exist) / `force` (always draw our own) / `off` (never draw them).
+6. **Two sets of window control buttons in the top-right corner**: Upstream ships its own `<WindowControls/>` on every non-macOS platform; the earlier unconditional second set caused duplication (**not a system-theme conflict**). **Fix**: injection is now a fallback — skip when the upstream container exists and remove any stale buttons; override with `WORKBUDDY_WINCTRL`: `auto` (default) / `force` / `off`.
+7. **Buttons on floating layers cannot be clicked (hover works, no error — e.g. delete-task "confirm")**: `-webkit-app-region: drag` zones swallow `click` by hit-testing; upstream's workaround covers only `.workbuddy-topbar`, while Linux — never assigned a `data-platform` — additionally matches the macOS race-fallback 36px `::before` strips (drag zone y=0..66), and the menubar is equally uncovered. **Fix**: assign Linux its own `data-platform="linux"`, and keep the menubar draggable only when the pointer is over its own chrome (auto `no-drag` over menu items or covered by an overlay).
 
 ## Useful Custom Configurations
 

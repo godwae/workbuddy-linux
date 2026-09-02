@@ -541,31 +541,12 @@ if (source.includes(marker)) {
     } // end of the Fix 2/3 patch block
 
     // -----------------------------------------------------------------------
-    // Fix 5 (Linux): window control buttons (minimize/maximize/close).
-    //
-    // Upstream already renders its own <WindowControls/> on every non-macOS
-    // platform: initWindowControlsContainer() only bails out on isMac, and
-    // the renderer mounts the component into
-    // #workbuddy-window-controls-container during bootstrap. Drawing a
-    // second set unconditionally therefore produced duplicated buttons.
-    //
-    // The injected buttons are now a fallback rather than the default:
-    //   auto  (default) — skip when the upstream container is present;
-    //   force           — always draw ours (WORKBUDDY_WINCTRL=force);
-    //   off             — never draw ours (WORKBUDDY_WINCTRL=off).
-    // Should an earlier pass inject buttons before the upstream container
-    // appears, a later pass detects it and removes them (self-healing).
-    //
-    // Anchor note: WorkBuddy 5.3.x ships an esbuild bundle, so the logger
-    // is namespaced (`require_logger.windowLog`) and the message is a
-    // template literal carrying a timestamp suffix. Anchor on the stable
-    // substring only, so a bundler rename cannot silently disable this.
-    //
-    // API note: the renderer exposes window control through
-    // `workbuddyDesktop.window.getCurrentWindow()` (see preload/index.js),
-    // NOT through `buddyAPI` — that object only carries telemetry and auth
-    // helpers. We use the documented path and fall back to the generic
-    // `invoke()` dispatcher behind DESKTOP_HOST_CHANNEL_MAP.
+    // Fix 5 (Linux): 窗口控制按钮——仅作兜底。上游非 macOS 平台自带
+    // <WindowControls/>（initWindowControlsContainer() 仅 isMac 时跳过），
+    // 无条件注入会重复。WORKBUDDY_WINCTRL: auto（默认，检测到上游容器即
+    // 跳过/自愈移除误注入）/ force / off。锚点只取稳定子串，防 esbuild
+    // 改名静默失配。渲染端走 workbuddyDesktop.window.getCurrentWindow()，
+    // 不是 buddyAPI（后者只有 telemetry/auth），回退到通用 invoke()。
     // -----------------------------------------------------------------------
     if (source.includes(WINCTRL_MARKER)) {
         record('window control buttons (Fix 5)', 'skipped', 'already patched');
@@ -651,6 +632,69 @@ if (source.includes(marker)) {
             source = source.slice(0, afterReady) + windowControlsInjection + source.slice(afterReady);
             record('window control buttons (Fix 5)', 'applied',
                 'injected at "Window ready to show"; auto-skipped when upstream WindowControls are present');
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Fix 8 (Linux): drag 区按命中测试判定，落入区内的按下会被判为拖窗并吞掉
+    // click —— 浮层控件"能 hover 但点不动"。上游规避只覆盖 .workbuddy-topbar，
+    // Linux 因 data-platform 缺失还额外命中为 macOS 竞态兜底写的 36px ::before
+    // 拖拽条（选择器 :not([data-platform])），拖拽区达 y=0..66；菜单栏也不在
+    // 上游规避范围内。故给 Linux 设专属 data-platform="linux"（Linux 样式走
+    // :not(mac):not(windows) 仍命中，且无应用 JS 读取该属性），并按指针位置
+    // 守卫菜单栏拖拽。
+    // -----------------------------------------------------------------------
+    const DESKTOPLAYOUT_MARKER = '__WB_DESKTOPLAYOUT_PATCH_V1__';
+    if (source.includes(DESKTOPLAYOUT_MARKER)) {
+        record('frameless drag-region guard (Fix 8)', 'skipped', 'already patched');
+    } else {
+        const readyMatch2 = source.match(/^[^\n]*Window ready to show[^\n]*/m);
+        if (!readyMatch2) {
+            record('frameless drag-region guard (Fix 8)', 'failed',
+                '"Window ready to show" line not found — re-anchor against upstream bundle');
+        } else {
+            const afterReady2 = readyMatch2.index + readyMatch2[0].length;
+            const desktopLayoutInjection = `
+                        // ${DESKTOPLAYOUT_MARKER} [wb-linux-patch] frameless drag-region guard
+                        if (process.platform === "linux") {
+                                const wbLinuxDesktopLayout = function() {
+                                        if (!document.body.hasAttribute("data-platform")) document.body.setAttribute("data-platform", "linux");
+                                        var MENUBAR_ID = "workbuddy-menubar-container";
+                                        var CLS = "wb-linux-menubar-nodrag";
+                                        if (!document.getElementById("wb-linux-drag-guard-style")) {
+                                                var st = document.createElement("style");
+                                                st.id = "wb-linux-drag-guard-style";
+                                                st.textContent = "body." + CLS + " #" + MENUBAR_ID + "{-webkit-app-region:no-drag !important;}";
+                                                document.head.appendChild(st);
+                                        }
+                                        var raf = 0, lx = -1, ly = -1;
+                                        var syncGuard = function() {
+                                                raf = 0;
+                                                var el = document.elementFromPoint(lx, ly);
+                                                if (!el || !el.closest) return;
+                                                var inMenubar = !!el.closest("#" + MENUBAR_ID);
+                                                var interactive = !!el.closest('button, a, input, select, textarea, [role="menuitem"], [role="menu"], [role="button"]');
+                                                document.body.classList.toggle(CLS, !(inMenubar && !interactive));
+                                        };
+                                        document.addEventListener("pointermove", function(e) {
+                                                lx = e.clientX; ly = e.clientY;
+                                                if (!raf) raf = requestAnimationFrame(syncGuard);
+                                        }, true);
+                                };
+                                const wbLinuxInjectLayout = () => {
+                                        try {
+                                                const wc2 = this.mainWindow ? this.mainWindow.webContents : null;
+                                                if (!wc2) return;
+                                                wc2.executeJavaScript("(" + wbLinuxDesktopLayout.toString() + ")()").catch(() => {});
+                                        } catch (_) {}
+                                };
+                                this.mainWindow.webContents.once("did-finish-load", wbLinuxInjectLayout);
+                                setTimeout(wbLinuxInjectLayout, 1500);
+                                setTimeout(wbLinuxInjectLayout, 5000);
+                        }`;
+            source = source.slice(0, afterReady2) + desktopLayoutInjection + source.slice(afterReady2);
+            record('frameless drag-region guard (Fix 8)', 'applied',
+                'Linux gets data-platform="linux" (drops the macOS ::before drag strips); menubar drag disabled unless the pointer is over its own chrome');
         }
     }
 

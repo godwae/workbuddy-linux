@@ -39,19 +39,19 @@
 #   UpdateServiceLinux.checkForUpdates is short-circuited so the periodic
 #   background check never hits the update feed.
 #
-# Fix 5 — window control buttons (minimize/maximize/close) — FALLBACK ONLY:
-#   Upstream already renders its own <WindowControls/> on every non-macOS
-#   platform: initWindowControlsContainer() only bails out on isMac, and
-#   the renderer mounts the component into
-#   #workbuddy-window-controls-container during bootstrap. Drawing a second
-#   set unconditionally produced duplicated buttons on Linux.
-#   The injected buttons are therefore a fallback, gated by
-#   WORKBUDDY_WINCTRL: auto (default, skip when the upstream container is
-#   present) / force (always draw) / off (never draw). A later pass also
-#   removes buttons injected before the upstream container appeared.
-#   They are wired to workbuddyDesktop.window.getCurrentWindow() — note the
-#   renderer API is NOT `buddyAPI`; that object only carries telemetry and
-#   auth helpers.
+# Fix 5 — window control buttons (兜底):
+#   上游非 macOS 平台自带 <WindowControls/>，无条件注入会重复。
+#   WORKBUDDY_WINCTRL: auto（默认，上游容器存在即跳过/自愈移除误注入）/
+#   force / off。渲染端走 workbuddyDesktop.window.getCurrentWindow()，
+#   不是 buddyAPI（后者只有 telemetry/auth）。
+#
+# Fix 8 — drag 区守卫:
+#   drag 区按命中测试判定，落入区内的按下会被判为拖窗并吞掉 click——
+#   控件"能 hover 但点不动"。上游规避只覆盖 .workbuddy-topbar，Linux 上
+#   还有两处未覆盖：36px ::before 拖拽条（:not([data-platform]) 兜底，
+#   Linux 属性缺失而永久命中，拖拽区达 y=0..66）和菜单栏本身。修复：
+#   给 Linux 设专属 data-platform="linux"（Linux 样式走 :not(mac):not(windows)
+#   仍命中，无应用 JS 读该属性）；菜单栏仅在指针位于其空白区域时可拖拽。
 #
 # Anchoring:
 #   Every patch is anchored on upstream source text, so a bundler upgrade

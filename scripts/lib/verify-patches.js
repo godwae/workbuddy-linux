@@ -32,6 +32,7 @@ const MARKERS = [
     { file: 'main/index.js', key: '__WB_UPDATERPC_PATCH_V1__', name: 'update RPC stubs (Fix 6b)', required: true },
     { file: 'main/index.js', key: '__WB_AUTOUPDATE_PATCH_V1__', name: 'auto-update short-circuit (Fix 6c)', required: true },
     { file: 'main/index.js', key: '__WB_UPDATEMENU_PATCH_V1__', name: 'update menu greyed out (Fix 6a)', required: false },
+    { file: 'main/index.js', key: '__WB_DESKTOPLAYOUT_PATCH_V1__', name: 'drag-region guard (Fix 8)', required: true },
 ];
 
 function fail(msg) {
