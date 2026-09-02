@@ -129,7 +129,7 @@ make check-update
 WORKBUDDY_UPDATE_PLATFORM=workbuddy-darwin-arm64 make check-update
 ```
 
-检测到新版本时会给出下载地址、SHA256 与升级路径（`make build-app && make package && make install`）。退出码：`0`=已是最新，`1`=有更新，`2`=查询失败。
+检测到新版本时会给出官方版本号与升级路径（`make build-app && make package && make install`），请前往官网下载新版 DMG。退出码：`0`=已是最新，`1`=有更新，`2`=查询失败。
 
 ## 项目状态
 

@@ -6,8 +6,8 @@ set -euo pipefail
 # 背景：workbuddy-linux 禁用了应用内"检查更新"（上游更新器依赖 macOS ShipIt /
 # Windows Squirrel 安装器，在 Linux 上不可用）。但 WorkBuddy 的升级查询接口是公开的：
 #   GET https://copilot.tencent.com/v2/update?platform=<platform>&version=<ver>
-# 该接口无需登录，直接返回可升级目标包的 version / productVersion / url /
-# sha256hash 等字段。
+# 该接口无需登录，直接返回可升级目标包的 version / productVersion 等字段。
+# 本脚本只输出官方版本号，不输出 DMG 下载直链，请前往官网获取。
 #
 # ⚠️ 关于 version 参数（2026-09 实测修正）：
 #   该接口是"增量升级查询"，语义为「从 version 升级到哪个版本」，不是「返回最新发布版」。
@@ -138,8 +138,6 @@ if 'code' in data and 'version' not in data:
 
 latest = data.get('version', '')
 product = data.get('productVersion', latest)
-url = data.get('url', '')
-sha = data.get('sha256hash', '')
 
 local_rel = parse_ver(local_version)[:3]
 latest_rel = parse_ver(latest)[:3]
@@ -159,11 +157,7 @@ if cmp_tuple(latest_rel, local_rel) > 0:
     print("[check-update] 官方已发布新版本: %s" % latest)
     if product and product != latest:
         print("[check-update] 产品版本: %s" % product)
-    if url:
-        print("[check-update] 下载地址: %s" % url)
-    if sha:
-        print("[check-update] SHA256: %s" % sha)
-    print("[check-update] 升级路径: 下载新版 macOS DMG 放入 downloads/ 后执行:")
+    print("[check-update] 请前往官网下载新版 macOS DMG 放入 downloads/ 后执行:")
     print("[check-update]   make build-app && make package && make install")
     sys.exit(1)
 
