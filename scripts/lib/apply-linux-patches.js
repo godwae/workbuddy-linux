@@ -666,6 +666,10 @@ if (source.includes(marker)) {
                                                 st.id = "wb-linux-drag-guard-style";
                                                 st.textContent = "body." + CLS + " #" + MENUBAR_ID + "{-webkit-app-region:no-drag !important;}";
                                                 document.head.appendChild(st);
+                                                var st2 = document.createElement("style");
+                                                st2.id = "wb-linux-sidebar-header-style";
+                                                st2.textContent = 'body[data-platform="linux"] .industry-template-switcher__host{margin-left:12px !important;}';
+                                                document.head.appendChild(st2);
                                         }
                                         var raf = 0, lx = -1, ly = -1;
                                         var syncGuard = function() {
