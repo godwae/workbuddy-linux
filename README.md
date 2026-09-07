@@ -31,6 +31,8 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
 
 ### **📌 继续维护说明**：原项目 [JipZeonGit/workbuddy-linux](https://github.com/JipZeonGit/workbuddy-linux) 已进入归档（只读）状态。本仓库 [godwae/workbuddy-linux](https://github.com/godwae/workbuddy-linux) 为其社区继续维护版，遵循原项目 MIT 许可证并保留原作者署名，更新与问题请在本仓库提交。
 
+### **🔔 官方 Linux 版动态**：官网下载页现已提供 Linux 下载入口（目前引导 UOS / 麒麟用户前往各自应用商店获取）。按此趋势，适配其他主流发行版的官方 WorkBuddy 预计不久后上线。官方 Linux 版发布后，本仓库将进入 public archive（只读归档）状态，届时请直接使用官方版本。
+
 </div>
 
 ---
@@ -44,6 +46,12 @@ WorkBuddy 的非官方 Linux 自动化移植与安装构建脚本工具
 本仓库**仅作为转换工具**，绝不充当软件分发渠道。请务必前往官方网站下载正版 Intel/x64 架构 DMG 安装包，放置于项目 `downloads/` 目录下；所有生成的应用目录、安装包产物均仅保留在本地，且已加入 Git 忽略规则，不会被提交至仓库。
 
 遇到任何 Bug 请在此仓库提 Issue ，严禁跳脸向官方客服反馈在 Linux 移植后使用的相关问题。
+
+## 官方 Linux 版进展
+
+官网下载页已出现 Linux 下载入口，目前仅引导 UOS / 麒麟用户前往各自应用商店获取安装包。从这一动向看，面向其他发行版的官方版本应当不久后发布。官方 Linux 版上线后，本项目将进入 public archive（只读归档）阶段——届时请直接使用官方版本，本仓库沉淀的移植经验仅供参考。
+
+此外，官方分发服务器上已可下载到 Linux **AppImage** 版本，路径遵循固定规则：`https://download.codebuddy.cn/workbuddy/saas/linux-x64/` 目录下的 `WorkBuddy-linux-x64-<版本号>-<构建号>-<提交哈希>.AppImage`。动手能力强的用户可根据官网公开发布的版本信息自行拼接出对应版本的 URL 下载尝鲜；该直链未在官方页面直接列出，且会随版本更新变动，请以官方渠道发布的正式版本为准。
 
 
 ## 版本适配说明
@@ -240,6 +248,12 @@ ELECTRON_HEADERS_URL=https://artifacts.electronjs.org/headers/dist bash install.
 
 遇到任何 Bug 請在此倉庫提 Issue ，嚴禁跳臉向官方客服反饋在 Linux 移植後使用的相關問題。
 
+## 官方 Linux 版進展
+
+官網下載頁已出現 Linux 下載入口，目前僅引導 UOS / 麒麟用戶前往各自應用商店獲取安裝包。從這一動向看，面向其他發行版的官方版本應當不久後發布。官方 Linux 版上線後，本專案將進入 public archive（唯讀歸檔）階段——屆時請直接使用官方版本，本倉庫沉澱的移植經驗僅供參考。
+
+此外，官方分發伺服器上已可下載到 Linux **AppImage** 版本，路徑遵循固定規則：`https://download.codebuddy.cn/workbuddy/saas/linux-x64/` 目錄下的 `WorkBuddy-linux-x64-<版本號>-<建置號>-<提交雜湊>.AppImage`。動手能力強的用戶可根據官網公開發布的版本資訊自行拼接出對應版本的 URL 下載嘗鮮；該直鏈未在官方頁面直接列出，且會隨版本更新變動，請以官方渠道發布的正式版本為準。
+
 ## 版本適配說明
 
 當前補丁基於官方 WorkBuddy **5.3.14** 驗證通過，配套 Electron 運行時為 **37.10.3**（由 `install.sh` 從 DMG 內 `Electron Framework` 的 Info.plist 自動探測，無須手動指定）。
@@ -417,6 +431,12 @@ This is an unofficial community tool designed to convert your legally obtained o
 This repository **serves solely as a converter** and will never act as a software redistribution channel. Please download the genuine Intel/x64 DMG installer from the official website and place it in the `downloads/` directory. All generated application directories and package artifacts are stored locally only and are added to Git ignore rules to avoid being committed to the repository.
 
 If you encounter any bugs, please submit an Issue in this repository. Do not directly contact official customer service to report issues related to usage after Linux porting.
+
+## Official Linux Build Status
+
+The official download page now offers a Linux entry, currently directing UOS / Kylin users to their respective app stores. Judging from this move, an official build for other mainstream distributions should arrive soon. Once the official Linux version is released, this repository will enter the public archive (read-only) stage — please switch to the official build then; the porting experience documented here remains for reference only.
+
+In addition, a Linux **AppImage** build is already downloadable from the official distribution server, following a fixed URL scheme: `WorkBuddy-linux-x64-<version>-<build-number>-<commit-hash>.AppImage` under `https://download.codebuddy.cn/workbuddy/saas/linux-x64/`. Users comfortable with a terminal can piece together the URL for a given version from the version information published on the official website. Note that this direct link is not listed on the official page and changes with each release — always defer to the official channel for stable builds.
 
 ## Version Compatibility
 
